@@ -2,6 +2,8 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QueryKit.Repositories", "QueryKit.Repositories\QueryKit.Repositories.csproj", "{5CEC58DB-BE2D-4ABD-AB52-0D7251B3557B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QueryKit.Repositories.Tests", "QueryKit.Repositories.Tests\QueryKit.Repositories.Tests.csproj", "{856522EB-D25A-47F8-9626-F418313FB860}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -12,5 +14,9 @@ Global
 		{5CEC58DB-BE2D-4ABD-AB52-0D7251B3557B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5CEC58DB-BE2D-4ABD-AB52-0D7251B3557B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{5CEC58DB-BE2D-4ABD-AB52-0D7251B3557B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{856522EB-D25A-47F8-9626-F418313FB860}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{856522EB-D25A-47F8-9626-F418313FB860}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{856522EB-D25A-47F8-9626-F418313FB860}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{856522EB-D25A-47F8-9626-F418313FB860}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

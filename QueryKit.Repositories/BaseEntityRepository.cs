@@ -9,6 +9,12 @@ using QueryKit.Repositories.Interfaces;
 
 namespace QueryKit.Repositories;
 
+/// <summary>
+/// Provides read/write operations for entities, including soft delete support via <see cref="SoftDeleteAttribute"/>.
+/// Exposes lifecycle hooks for insert, update, and delete operations that can be overridden by derived repositories.
+/// </summary>
+/// <typeparam name="TEntity">Entity type.</typeparam>
+/// <typeparam name="TKey">Primary key type.</typeparam>
 public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEntity, TKey>, IEntityRepository<TEntity, TKey> where TEntity : class, IEntity<TKey>
 {
     private static readonly PropertyInfo? SoftDeleteProp =
