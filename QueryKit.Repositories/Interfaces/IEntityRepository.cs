@@ -6,7 +6,7 @@ namespace QueryKit.Repositories.Interfaces;
 public interface IEntityRepository<TEntity, TKey> : IEntityReadRepository<TEntity, TKey> where TEntity : class, IEntity<TKey>
 {
     /// <summary>
-    /// Inserts a new entity and returns it with its key populated.
+    /// Inserts a new entity and returns the inserted instance with its primary key populated.
     /// </summary>
     Task<TEntity> InsertAsync(TEntity entity, CancellationToken cancellationToken = default);
     
@@ -16,7 +16,7 @@ public interface IEntityRepository<TEntity, TKey> : IEntityReadRepository<TEntit
     Task<TEntity> UpdateAsync(TEntity entity, CancellationToken cancellationToken = default);
     
     /// <summary>
-    /// Inserts or updates an entity based on whether its key has the default value.
+    /// Inserts a new entity if it is new, otherwise updates the existing entity.
     /// </summary>
     Task<TEntity> InsertOrUpdateAsync(TEntity entity, CancellationToken cancellationToken = default);
     
@@ -27,12 +27,14 @@ public interface IEntityRepository<TEntity, TKey> : IEntityReadRepository<TEntit
     Task<bool> DeleteAsync(TKey id, CancellationToken cancellationToken = default);
     
     /// <summary>
-    /// Deletes or soft-deletes the provided entity instance.
+    /// Deletes an entity. If a boolean property has <see cref="Attributes.SoftDeleteAttribute"/>,
+    /// the entity is soft-deleted instead.
     /// </summary>
     Task<bool> DeleteAsync(TEntity entity, CancellationToken cancellationToken = default);
     
     /// <summary>
-    /// Undeletes soft-deleted entities
+    /// Undeletes a soft-deleted entity by primary key. If no boolean property has <see cref="Attributes.SoftDeleteAttribute"/>,
+    /// this method does nothing and returns false.
     /// </summary>
     Task<bool> UndeleteAsync(TKey id, CancellationToken cancellationToken = default);
 }

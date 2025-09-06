@@ -53,23 +53,6 @@ public class BaseEntityReadRepository<TEntity, TKey> : IEntityReadRepository<TEn
     }
 
     /// <inheritdoc />
-    public async Task<TEntity?> GetAsync(string sql, object? parameters, CancellationToken cancellationToken = default)
-    {
-        using var conn = await OpenConnection();
-        var cmd = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
-        return await conn.QueryFirstOrDefaultAsync<TEntity>(cmd);
-    }
-
-    /// <inheritdoc />
-    public async Task<IList<TEntity>> GetListAsync(string sql, object? parameters, CancellationToken cancellationToken = default)
-    {
-        using var conn = await OpenConnection();
-        var cmd = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
-        var rows = await conn.QueryAsync<TEntity>(cmd);
-        return rows.ToList();
-    }
-
-    /// <inheritdoc />
     public async Task<PageResult<TEntity>> GetListPagedAsync(FilterOptions? filter = null, SortOptions? sort = null,
         PageOptions? paging = null, bool includeDeleted = false, CancellationToken cancellationToken = default)
     {
@@ -95,6 +78,36 @@ public class BaseEntityReadRepository<TEntity, TKey> : IEntityReadRepository<TEn
 
         var p = paging ?? new PageOptions();
         return await GetPagedAsync(whereSql, orderBy, parameters, p.PageClamped, p.PageSizeClamped, cancellationToken);
+    }
+
+    public async Task<IList<TEntity>> GetListAsync(FilterOptions? filter = null, SortOptions? sort = null,
+        bool includeDeleted = false,
+        CancellationToken cancellationToken = default)
+    {
+        using var conn = await OpenConnection();
+
+        var (whereSql, parameters) = QuerySqlBuilder.BuildWhere<TEntity>(filter);
+
+        if (!includeDeleted)
+        {
+            var (softSql, softParams) = BuildNotDeletedPredicate(DefaultAlias);
+            if (!string.IsNullOrWhiteSpace(softSql))
+            {
+                whereSql = string.IsNullOrWhiteSpace(whereSql) ? softSql : $"{whereSql} AND {softSql}";
+                parameters = QuerySqlBuilder.MergeParams(parameters, softParams);
+            }
+        }
+
+        var orderBy = QuerySqlBuilder.BuildOrderBy<TEntity>(sort);
+
+        if (string.IsNullOrWhiteSpace(orderBy))
+        {
+            var pk = QuerySqlBuilder.MapPropertyToColumn<TEntity>("Id") ?? "Id";
+            orderBy = $"{pk} asc";
+        }
+
+        var results = await conn.GetListAsync<TEntity>(whereSql, parameters, cancellationToken: cancellationToken);
+        return results.ToList();
     }
 
     /// <inheritdoc />
@@ -164,26 +177,38 @@ public class BaseEntityReadRepository<TEntity, TKey> : IEntityReadRepository<TEn
         var count = await conn.RecordCountAsync<TEntity>(where, parameters);
         return count == 0;
     }
-
-    /// <inheritdoc />
-    public async Task<T?> GetAsync<T>(string sql, object? parameters, CancellationToken cancellationToken = default)
+    
+    protected async Task<TEntity?> GetAsync(string sql, object? parameters, CancellationToken cancellationToken = default)
+    {
+        using var conn = await OpenConnection();
+        var cmd = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
+        return await conn.QueryFirstOrDefaultAsync<TEntity>(cmd);
+    }
+    
+    protected async Task<IList<TEntity>> GetListAsync(string sql, object? parameters, CancellationToken cancellationToken = default)
+    {
+        using var conn = await OpenConnection();
+        var cmd = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
+        var rows = await conn.QueryAsync<TEntity>(cmd);
+        return rows.ToList();
+    }
+    
+    protected async Task<T?> GetAsync<T>(string sql, object? parameters, CancellationToken cancellationToken = default)
     {
         using var conn = await OpenConnection();
         var cmd = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
         return await conn.QueryFirstOrDefaultAsync<T>(cmd);
     }
-
-    /// <inheritdoc />
-    public async Task<IList<T>> GetListAsync<T>(string sql, object? parameters, CancellationToken cancellationToken = default)
+    
+    protected async Task<IList<T>> GetListAsync<T>(string sql, object? parameters, CancellationToken cancellationToken = default)
     {
         using var conn = await OpenConnection();
         var cmd = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
         var rows = await conn.QueryAsync<T>(cmd);
         return rows.ToList();
     }
-
-    /// <inheritdoc />
-    public async Task<PageResult<T>> GetListPagedAsync<T>(string sql, object? parameters, FilterOptions? filter, SortOptions? sort, PageOptions? paging,
+    
+    protected async Task<PageResult<T>> GetListPagedAsync<T>(string sql, object? parameters, FilterOptions? filter, SortOptions? sort, PageOptions? paging,
         CancellationToken cancellationToken = default)
     {
         paging ??= new PageOptions();
@@ -220,8 +245,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IEntityReadRepository<TEn
         return new PageResult<T> { Items = items, TotalItems = total };
     }
     
-    /// <inheritdoc />
-    public async Task<PageResult<T>> GetListPagedAsync<T>(
+    protected async Task<PageResult<T>> GetListPagedAsync<T>(
         string dataSql,
         string countSql,
         object? parameters,
@@ -285,13 +309,6 @@ public class BaseEntityReadRepository<TEntity, TKey> : IEntityReadRepository<TEn
 
         var column = QuerySqlBuilder.MapPropertyToColumn<TEntity>(pi.Name) ?? pi.Name;
         return (column, pi);
-    }
-
-    private static bool IsSoftDeleted(TEntity entity)
-    {
-        var prop = typeof(TEntity).GetProperties()
-            .FirstOrDefault(p => p.GetCustomAttribute<SoftDeleteAttribute>() != null && p.PropertyType == typeof(bool));
-        return prop is not null && (bool)(prop.GetValue(entity) ?? false);
     }
 
     private static (string whereSql, DynamicParameters? parameters) BuildNotDeletedPredicate(string? alias = null)
