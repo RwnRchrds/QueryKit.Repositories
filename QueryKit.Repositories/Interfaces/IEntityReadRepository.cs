@@ -7,6 +7,9 @@ using QueryKit.Repositories.Sorting;
 
 namespace QueryKit.Repositories.Interfaces;
 
+/// <summary>
+/// A read-only repository interface for entities with a primary key.
+/// </summary>
 public interface IEntityReadRepository<TEntity, TKey> where TEntity : class, IEntity<TKey>
 {
     /// <summary>

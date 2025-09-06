@@ -1,11 +1,52 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
+        <!-- Targets -->
         <TargetFrameworks>net8.0;netstandard2.0</TargetFrameworks>
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
-        <AssemblyVersion>0.9.0</AssemblyVersion>
-        <FileVersion>0.9.0</FileVersion>
+        
+        <!-- Packing -->
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+        <!-- NuGet metadata -->
+        <PackageId>Rowan.QueryKit.Repositories</PackageId>
+        <Title>QueryKit.Repositories</Title>
+        <Authors>Rowan Richards</Authors>
+        <Company>Rowan Richards</Company>
+        <Description>Repository base classes and query helpers (filter/sort/page) for [Rowan.QueryKit].</Description>
+        <PackageTags>dapper sql crud micro-orm query repository</PackageTags>
+        <PackageProjectUrl>https://github.com/RwnRchrds/QueryKit.Repositories</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/RwnRchrds/QueryKit.Repositories</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <PackageLicenseFile>LICENSE</PackageLicenseFile>
+
+        <!-- CI bits / SourceLink -->
+        <!-- Only set by CI; harmless locally -->
+        <ContinuousIntegrationBuild Condition="'$(TEAMCITY_VERSION)' != ''">true</ContinuousIntegrationBuild>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+
+        <!-- === Versioning ===
+             TeamCity will pass /p:Version, /p:PackageVersion, /p:InformationalVersion.
+             We provide LOCAL FALLBACKS so dev machines still build nicely.
+        -->
+        <!-- Default library (package) version when not provided by CI -->
+        <Version Condition="'$(Version)' == ''">0.9.0</Version>
+        <PackageVersion Condition="'$(PackageVersion)' == ''">$(Version)</PackageVersion>
+
+        <!-- Stable assembly version by default; override from CI if you want -->
+        <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">0.9.0.0</AssemblyVersion>
+        <FileVersion Condition="'$(FileVersion)' == ''">$(Version)</FileVersion>
+
+        <!-- Add git SHA if available (SourceLink populates SourceRevisionId); otherwise mark as Local -->
+        <InformationalVersion Condition="'$(InformationalVersion)' == '' and '$(SourceRevisionId)' != ''">$(Version)+$(SourceRevisionId)</InformationalVersion>
+        <InformationalVersion Condition="'$(InformationalVersion)' == '' and '$(SourceRevisionId)' == ''">$(Version)+Local</InformationalVersion>
+        
+        <!-- Localization -->
         <NeutralLanguage>en-GB</NeutralLanguage>
     </PropertyGroup>
 
@@ -15,6 +56,11 @@
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       </PackageReference>
       <PackageReference Include="Rowan.QueryKit" Version="0.9.3" />
+    </ItemGroup>
+    
+    <ItemGroup>
+        <None Include="../README.md" Pack="true" PackagePath="" />
+        <None Include="../LICENSE" Pack="true" PackagePath="" />
     </ItemGroup>
 
 </Project>

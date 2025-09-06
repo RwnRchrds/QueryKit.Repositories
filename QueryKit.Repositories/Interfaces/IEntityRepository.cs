@@ -3,6 +3,9 @@ using System.Threading.Tasks;
 
 namespace QueryKit.Repositories.Interfaces;
 
+/// <summary>
+/// A repository interface for managing entities with CRUD operations.
+/// </summary>
 public interface IEntityRepository<TEntity, TKey> : IEntityReadRepository<TEntity, TKey> where TEntity : class, IEntity<TKey>
 {
     /// <summary>

@@ -12,6 +12,9 @@ public sealed record SortOptions()
     /// </summary>
     public SortCriterion[] Criteria { get; init; } = [];
 
+    /// <summary>
+    /// Creates a SortOptions instance with a single criterion.
+    /// </summary>
     public static SortOptions By(string columnName, SortDirection direction = SortDirection.Ascending)
         => new() { Criteria = new[] { new SortCriterion { ColumnName = columnName, Direction = direction } } };
 }

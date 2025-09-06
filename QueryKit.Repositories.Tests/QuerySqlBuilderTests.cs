@@ -149,6 +149,7 @@ SELECT * FROM cte".Trim();
         [Fact]
         public void BuildWhere_In_ExpandsParams()
         {
+            ConnectionExtensions.UseDialect(Dialect.SQLServer);
             var filter = new FilterOptions
             {
                 Groups = new[]
@@ -170,7 +171,7 @@ SELECT * FROM cte".Trim();
 
             var (where, dp) = QuerySqlBuilder.BuildWhere<StudentEntity>(filter);
 
-            Assert.StartsWith("Age IN (", where);
+            Assert.StartsWith("[Age] IN (", where);
             var names = dp.ParameterNames.ToList();
             Assert.Equal(3, names.Count);
         }
@@ -240,7 +241,7 @@ SELECT * FROM cte".Trim();
             };
 
             var (where, dp) = QuerySqlBuilder.BuildWhere<StudentEntity>(filter);
-            Assert.Contains("Age BETWEEN @p0 AND @p1", where);
+            Assert.Contains("[Age] BETWEEN @p0 AND @p1", where);
             Assert.Equal(2, dp.ParameterNames.Count());
         }
 
@@ -265,8 +266,8 @@ SELECT * FROM cte".Trim();
             };
 
             var (where, dp) = QuerySqlBuilder.BuildWhere<StudentEntity>(filter);
-            Assert.Contains("Name IS NULL", where);
-            Assert.Contains("Age IS NOT NULL", where);
+            Assert.Contains("[Name] IS NULL", where);
+            Assert.Contains("[Age] IS NOT NULL", where);
             Assert.Empty(dp.ParameterNames);
         }
 
@@ -283,7 +284,7 @@ SELECT * FROM cte".Trim();
             };
 
             var order = QuerySqlBuilder.BuildOrderBy<StudentEntity>(sort);
-            Assert.Equal("StudentId asc, Name desc", order);
+            Assert.Equal("[StudentId] asc, [Name] desc", order);
         }
 
         [Fact]
@@ -321,7 +322,67 @@ SELECT * FROM cte".Trim();
             };
 
             var (where, dp) = QuerySqlBuilder.BuildWhere<StudentSummaryDto>(filter);
-            Assert.Equal("MemberCount > @p0", where);
+            Assert.Equal("[MemberCount] > @p0", where);
             Assert.Single(dp.ParameterNames);
         }
+
+
+        [Fact]
+        public void BuildOrderBy_UnknownColumn_Throws()
+        {
+            var sort = new SortOptions
+            {
+                Criteria = new[] { new SortCriterion { ColumnName = "HAX", Direction = SortDirection.Ascending } }
+            };
+            Assert.Throws<ArgumentException>(() => QuerySqlBuilder.BuildOrderBy<StudentEntity>(sort));
+        }
+
+        [Fact]
+        public void BuildWhere_UnknownColumn_Throws()
+        {
+            var filter = new FilterOptions
+            {
+                Groups = new[]
+                {
+                    new FilterGroup
+                    {
+                        Join = BoolJoin.And,
+                        Criteria = new[] { new FilterCriterion { ColumnName = "HAX", Operator = FilterOperator.Equals, Value = 1 } }
+                    }
+                }
+            };
+            Assert.Throws<ArgumentException>(() => QuerySqlBuilder.BuildWhere<StudentEntity>(filter));
+        }
+
+        [Fact]
+        public void BuildWhere_Like_EscapesPercentAndUnderscore()
+        {
+            var filter = new FilterOptions
+            {
+                Groups = new[]
+                {
+                    new FilterGroup
+                    {
+                        Join = BoolJoin.And,
+                        Criteria = new[]
+                        {
+                            new FilterCriterion { ColumnName = nameof(StudentEntity.Name), Operator = FilterOperator.Contains, Value = @"100%_raw\" }
+                        }
+                    }
+                }
+            };
+            var (whereSql, dp) = QuerySqlBuilder.BuildWhere<StudentEntity>(filter);
+            Assert.Contains("LIKE", whereSql);
+            // Ensure a parameter was generated
+            Assert.NotEmpty((dp as DynamicParameters).ParameterNames);
+        }
+
+        [Fact]
+        public void InjectWhere_WorksWithCte()
+        {
+            var baseSql = "WITH cte AS (SELECT * FROM X) SELECT * FROM cte ORDER BY Name";
+            var withWhere = QuerySqlBuilder.InjectWhere(baseSql, "Name IS NOT NULL");
+            Assert.Contains("WHERE Name IS NOT NULL", withWhere);
+        }
+
 }

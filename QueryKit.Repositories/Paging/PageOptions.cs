@@ -5,8 +5,19 @@
 /// </summary>
 public sealed record PageOptions
 {
+    /// <summary>
+    /// Default page number.
+    /// </summary>
     public const int DefaultPage = 1;
+    
+    /// <summary>
+    /// Default page size.
+    /// </summary>
     public const int DefaultPageSize = 50;
+    
+    /// <summary>
+    /// Maximum allowed page size.
+    /// </summary>
     public const int MaxPageSize = 500;
 
     /// <summary>
@@ -29,8 +40,18 @@ public sealed record PageOptions
     /// </summary>
     public int PageSizeClamped => PageSize < 1 ? DefaultPageSize : (PageSize >  MaxPageSize ? MaxPageSize : PageSize);
     
+    /// <summary>
+    /// The number of items to skip based on the current page and page size.
+    /// </summary>
     public int Skip => (PageClamped - 1) * PageSizeClamped;
+    
+    /// <summary>
+    /// The number of items to take based on the current page size.
+    /// </summary>
     public int Take => PageSizeClamped;
     
+    /// <summary>
+    /// Creates a new instance of <see cref="PageOptions"/> with the specified page and page size.
+    /// </summary>
     public static PageOptions Create(int page, int pageSize) => new PageOptions { Page = page, PageSize = pageSize };
 }

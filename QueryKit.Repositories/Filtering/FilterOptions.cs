@@ -17,6 +17,9 @@ public sealed record FilterOptions
     /// </summary>
     public FilterGroup[] Groups { get; init; } = [];
 
+    /// <summary>
+    /// Gets a <see cref="FilterOptions"/> with a single group containing the specified criteria, combined using AND.
+    /// </summary>
     public static FilterOptions From(params FilterCriterion[] criteria) =>
         new()
         {

@@ -19,12 +19,12 @@ namespace QueryKit.Repositories.Sql;
 /// </summary>
 public static class QuerySqlBuilder
 {
-    private static readonly ConcurrentDictionary<(Type, string), string?> _colMapCache
+    private static readonly ConcurrentDictionary<(Type, string), string?> ColMapCache
         = new ConcurrentDictionary<(Type, string), string?>();
-    
+
     /// <summary>
     /// Injects a <c>WHERE</c> fragment into <paramref name="sql"/>. If a top-level <c>WHERE</c> exists,
-    /// the fragment is joined using <c>AND</c>. Otherwise a new <c>WHERE</c> is inserted before top-level
+    /// the fragment is joined using <c>AND</c>. Otherwise, a new <c>WHERE</c> is inserted before top-level
     /// <c>ORDER BY</c>, <c>GROUP BY</c>, or <c>HAVING</c>.
     /// Safe for CTEs/subqueries (only top-level clauses are modified).
     /// </summary>
@@ -105,6 +105,7 @@ public static class QuerySqlBuilder
     /// <typeparam name="T">Target projection/DTO or entity type being filtered.</typeparam>
     public static (string whereSql, DynamicParameters parameters) BuildWhere<T>(FilterOptions? filter)
     {
+        var dialect = ConnectionExtensions.Config.Dialect;
         var dp = new DynamicParameters();
 
         if (filter is null || (filter.Groups?.Length ?? 0) == 0)
@@ -118,8 +119,12 @@ public static class QuerySqlBuilder
             var parts = new List<string>();
             foreach (var criterion in group.Criteria ?? Array.Empty<FilterCriterion>())
             {
-                var col = MapPropertyToColumn<T>(criterion.ColumnName) ?? criterion.ColumnName;
-                
+                var mapped = MapPropertyToColumn<T>(criterion.ColumnName);
+                if (mapped is null)
+                    throw new ArgumentException(
+                        $"Unknown column \'{criterion.ColumnName}\' for type {typeof(T).Name}. Only mapped properties are allowed.");
+                var col = EncapsulateIdentifier(mapped, dialect);
+
                 string Param(object? v)
                 {
                     var name = $"p{pIndex++}";
@@ -132,7 +137,7 @@ public static class QuerySqlBuilder
                     var patternEscaped = pattern.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
                     var name = $"p{pIndex++}";
                     dp.Add(name, patternEscaped);
-                    
+
                     var dialect = ConnectionExtensions.Config.Dialect;
                     if (dialect == Dialect.PostgreSQL)
                         return $"{col} ILIKE @{name}";
@@ -151,7 +156,7 @@ public static class QuerySqlBuilder
                     FilterOperator.LessThanOrEqual => $"{col} <= {Param(criterion.Value)}",
                     FilterOperator.GreaterThan => $"{col} > {Param(criterion.Value)}",
                     FilterOperator.GreaterThanOrEqual => $"{col} >= {Param(criterion.Value)}",
-                    
+
                     FilterOperator.In => BuildInClause(col, criterion, dp, ref pIndex),
 
                     FilterOperator.Between => $"{col} BETWEEN {Param(criterion.Value)} AND {Param(criterion.Value2)}",
@@ -182,23 +187,28 @@ public static class QuerySqlBuilder
     /// <typeparam name="T">Target projection/DTO or entity type being sorted.</typeparam>
     public static string BuildOrderBy<T>(SortOptions? sort)
     {
+        var dialect = ConnectionExtensions.Config.Dialect;
         if (sort?.Criteria is null || sort.Criteria.Length == 0)
             return "";
 
         var parts = new List<string>();
         foreach (var c in sort.Criteria)
         {
-            var col = MapPropertyToColumn<T>(c.ColumnName) ?? c.ColumnName;
+            var mapped = MapPropertyToColumn<T>(c.ColumnName);
+            if (mapped is null)
+                throw new ArgumentException(
+                    $"Unknown sortable column \'{c.ColumnName}\' for type {typeof(T).Name}. Only mapped properties are allowed.");
+            var col = EncapsulateIdentifier(mapped, dialect);
             var dir = c.Direction == SortDirection.Descending ? "desc" : "asc";
             parts.Add($"{col} {dir}");
         }
 
         return string.Join(", ", parts);
     }
-    
+
     /// <summary>
     /// Maps a property (or DTO alias) name on <typeparamref name="T"/> to a database column.
-    /// Honors <see cref="QueryKit.ColumnAttribute"/> if present; otherwise returns the property name as-is.
+    /// Honors <see cref="ColumnAttribute"/> if present; otherwise returns the property name as-is.
     /// </summary>
     /// <typeparam name="T">Type declaring the property/alias.</typeparam>
     /// <param name="candidate">Property or alias name.</param>
@@ -206,7 +216,7 @@ public static class QuerySqlBuilder
     public static string? MapPropertyToColumn<T>(string candidate)
     {
         var key = (typeof(T), candidate);
-        return _colMapCache.GetOrAdd(key, k =>
+        return ColMapCache.GetOrAdd(key, k =>
         {
             var (t, name) = k;
             var pi = t.GetProperty(name, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
@@ -228,6 +238,37 @@ public static class QuerySqlBuilder
         if (a != null) merged.AddDynamicParams(a);
         if (b != null) merged.AddDynamicParams(b);
         return merged;
+    }
+
+    private static string EncapsulateIdentifier(string col, Dialect dialect)
+    {
+        if (string.IsNullOrWhiteSpace(col)) return col;
+
+        static bool IsQuoted(string s) =>
+            (s.StartsWith("[") && s.EndsWith("]")) ||
+            (s.StartsWith(""") && s.EndsWith(""")) ||
+            (s.StartsWith("`") && s.EndsWith("`"));
+
+        static string Enc(string ident, Dialect d)
+        {
+            if (IsQuoted(ident)) return ident;
+            return d switch
+            {
+                Dialect.SQLServer => $"[{ident}]",
+                Dialect.MySQL => $"`{ident}`",
+                _ => $"{ident}"
+            };
+        }
+
+        var lastDot = col.LastIndexOf('.');
+        if (lastDot >= 0)
+        {
+            var prefix = col.Substring(0, lastDot + 1);
+            var ident = col.Substring(lastDot + 1);
+            return prefix + Enc(ident, dialect);
+        }
+
+        return Enc(col, dialect);
     }
 
     private static string RemoveLastTopLevelTail(string sql, string token)
@@ -364,7 +405,7 @@ public static class QuerySqlBuilder
             (criterion.Values as IEnumerable<object>)
             ?? (criterion.Value as IEnumerable<object>)
             ?? Array.Empty<object>();
-        
+
         var any = false;
         var names = new List<string>();
         foreach (var v in vals)

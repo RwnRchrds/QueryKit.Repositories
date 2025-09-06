@@ -21,12 +21,12 @@ public sealed record FilterCriterion
     /// <summary>
     /// Primary value; meaning depends on <see cref="Operator"/>.
     /// </summary>
-    public object Value { get; init; } = null;
+    public object? Value { get; init; } = null;
     
     /// <summary>
     /// Secondary value for operators that require two values (e.g., <see cref="FilterOperator.Between"/>).
     /// </summary>
-    public object Value2 { get; init; } = null;
+    public object? Value2 { get; init; } = null;
     
     /// <summary>
     /// Value set for <see cref="FilterOperator.In"/>.

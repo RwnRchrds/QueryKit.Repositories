@@ -48,6 +48,11 @@ public class BaseEntityReadRepository<TEntity, TKey> : IEntityReadRepository<TEn
     /// <inheritdoc />
     public async Task<TEntity?> GetByIdAsync(TKey id, CancellationToken cancellationToken = default)
     {
+        if (id is null)
+        {
+            throw new ArgumentNullException(nameof(id));
+        }
+        
         using var conn = await OpenConnection();
         return await conn.GetAsync<TEntity>(id);
     }
@@ -79,7 +84,8 @@ public class BaseEntityReadRepository<TEntity, TKey> : IEntityReadRepository<TEn
         var p = paging ?? new PageOptions();
         return await GetPagedAsync(whereSql, orderBy, parameters, p.PageClamped, p.PageSizeClamped, cancellationToken);
     }
-
+    
+    /// <inheritdoc />
     public async Task<IList<TEntity>> GetListAsync(FilterOptions? filter = null, SortOptions? sort = null,
         bool includeDeleted = false,
         CancellationToken cancellationToken = default)
@@ -178,6 +184,9 @@ public class BaseEntityReadRepository<TEntity, TKey> : IEntityReadRepository<TEn
         return count == 0;
     }
     
+    /// <summary>
+    /// Gets a single entity using the provided SQL and parameters.
+    /// </summary>
     protected async Task<TEntity?> GetAsync(string sql, object? parameters, CancellationToken cancellationToken = default)
     {
         using var conn = await OpenConnection();
@@ -185,6 +194,9 @@ public class BaseEntityReadRepository<TEntity, TKey> : IEntityReadRepository<TEn
         return await conn.QueryFirstOrDefaultAsync<TEntity>(cmd);
     }
     
+    /// <summary>
+    /// Gets a list of entities using the provided SQL and parameters.
+    /// </summary>
     protected async Task<IList<TEntity>> GetListAsync(string sql, object? parameters, CancellationToken cancellationToken = default)
     {
         using var conn = await OpenConnection();
@@ -193,6 +205,9 @@ public class BaseEntityReadRepository<TEntity, TKey> : IEntityReadRepository<TEn
         return rows.ToList();
     }
     
+    /// <summary>
+    /// Gets a single record of type <typeparamref name="T"/> using the provided SQL and parameters.
+    /// </summary>
     protected async Task<T?> GetAsync<T>(string sql, object? parameters, CancellationToken cancellationToken = default)
     {
         using var conn = await OpenConnection();
@@ -200,6 +215,9 @@ public class BaseEntityReadRepository<TEntity, TKey> : IEntityReadRepository<TEn
         return await conn.QueryFirstOrDefaultAsync<T>(cmd);
     }
     
+    /// <summary>
+    /// Gets a list of records of type <typeparamref name="T"/> using the provided SQL and parameters.
+    /// </summary>
     protected async Task<IList<T>> GetListAsync<T>(string sql, object? parameters, CancellationToken cancellationToken = default)
     {
         using var conn = await OpenConnection();
@@ -208,6 +226,9 @@ public class BaseEntityReadRepository<TEntity, TKey> : IEntityReadRepository<TEn
         return rows.ToList();
     }
     
+    /// <summary>
+    /// Gets a paged list of records of type <typeparamref name="T"/> using the provided SQL, parameters, and optional filtering, sorting, and paging options.
+    /// </summary>
     protected async Task<PageResult<T>> GetListPagedAsync<T>(string sql, object? parameters, FilterOptions? filter, SortOptions? sort, PageOptions? paging,
         CancellationToken cancellationToken = default)
     {
@@ -245,6 +266,9 @@ public class BaseEntityReadRepository<TEntity, TKey> : IEntityReadRepository<TEn
         return new PageResult<T> { Items = items, TotalItems = total };
     }
     
+    /// <summary>
+    /// Gets a paged list of records of type <typeparamref name="T"/> using the provided SQL for data retrieval and counting, along with parameters and paging options.
+    /// </summary>
     protected async Task<PageResult<T>> GetListPagedAsync<T>(
         string dataSql,
         string countSql,
@@ -286,6 +310,9 @@ public class BaseEntityReadRepository<TEntity, TKey> : IEntityReadRepository<TEn
         return conn;
     }
 
+    /// <summary>
+    /// Gets a paged list of <typeparamref name="TEntity"/> using the provided WHERE clause, ORDER BY clause, parameters, and paging options.
+    /// </summary>
     protected async Task<PageResult<TEntity>> GetPagedAsync(string whereSql, string orderBy, object? parameters,
         int page, int pageSize, CancellationToken cancellationToken = default)
     {
