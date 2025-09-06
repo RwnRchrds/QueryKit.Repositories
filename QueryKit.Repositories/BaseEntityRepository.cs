@@ -16,7 +16,7 @@ namespace QueryKit.Repositories;
 /// </summary>
 /// <typeparam name="TEntity">Entity type.</typeparam>
 /// <typeparam name="TKey">Primary key type.</typeparam>
-public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEntity, TKey>, IEntityRepository<TEntity, TKey> where TEntity : class, IEntity<TKey>
+public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEntity, TKey>, IBaseEntityRepository<TEntity, TKey> where TEntity : class, IBaseEntity<TKey>
 {
     private static readonly PropertyInfo? SoftDeleteProp =
         typeof(TEntity).GetProperties(BindingFlags.Public | BindingFlags.Instance)

@@ -23,7 +23,7 @@ namespace QueryKit.Repositories;
 /// </summary>
 /// <typeparam name="TEntity">Entity type.</typeparam>
 /// <typeparam name="TKey">Primary key type.</typeparam>
-public class BaseEntityReadRepository<TEntity, TKey> : IEntityReadRepository<TEntity, TKey> where  TEntity : class, IEntity<TKey>
+public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository<TEntity, TKey> where  TEntity : class, IBaseEntity<TKey>
 {
     /// <summary>
     /// Connection factory used to open database connections.

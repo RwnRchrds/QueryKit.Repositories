@@ -6,7 +6,7 @@ namespace QueryKit.Repositories.Interfaces;
 /// <summary>
 /// A repository interface for managing entities with CRUD operations.
 /// </summary>
-public interface IEntityRepository<TEntity, TKey> : IEntityReadRepository<TEntity, TKey> where TEntity : class, IEntity<TKey>
+public interface IBaseEntityRepository<TEntity, TKey> : IBaseEntityReadRepository<TEntity, TKey> where TEntity : class, IBaseEntity<TKey>
 {
     /// <summary>
     /// Inserts a new entity and returns the inserted instance with its primary key populated.

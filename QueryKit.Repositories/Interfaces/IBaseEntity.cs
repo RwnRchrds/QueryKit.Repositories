@@ -3,7 +3,7 @@
 /// <summary>
 /// An entity with a primary key.
 /// </summary>
-public interface IEntity<TKey>
+public interface IBaseEntity<TKey>
 {
     /// <summary>
     /// The primary key of the entity.

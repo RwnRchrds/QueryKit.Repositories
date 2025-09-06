@@ -10,7 +10,7 @@ namespace QueryKit.Repositories.Interfaces;
 /// <summary>
 /// A read-only repository interface for entities with a primary key.
 /// </summary>
-public interface IEntityReadRepository<TEntity, TKey> where TEntity : class, IEntity<TKey>
+public interface IBaseEntityReadRepository<TEntity, TKey> where TEntity : class, IBaseEntity<TKey>
 {
     /// <summary>
     /// Retrieves an entity by primary key.
