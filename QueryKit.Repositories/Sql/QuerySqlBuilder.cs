@@ -3,13 +3,13 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using Dapper;
-using QueryKit.Attributes;
 using QueryKit.Dialects;
 using QueryKit.Extensions;
 using QueryKit.Repositories.Enums;
 using QueryKit.Repositories.Filtering;
 using QueryKit.Repositories.Paging;
 using QueryKit.Repositories.Sorting;
+using QueryKit.Sql;
 
 namespace QueryKit.Repositories.Sql;
 
@@ -19,8 +19,8 @@ namespace QueryKit.Repositories.Sql;
 /// </summary>
 public static class QuerySqlBuilder
 {
-    private static readonly ConcurrentDictionary<(Type, string), string?> ColMapCache
-        = new ConcurrentDictionary<(Type, string), string?>();
+    private static readonly ConcurrentDictionary<(Type, string, string), string?> ColMapCache
+        = new ConcurrentDictionary<(Type, string, string), string?>();
 
     /// <summary>
     /// Injects a <c>WHERE</c> fragment into <paramref name="sql"/>. If a top-level <c>WHERE</c> exists,
@@ -81,6 +81,10 @@ public static class QuerySqlBuilder
     /// <returns>SQL with paging applied.</returns>
     public static string AppendPaging(string sql, PageOptions paging)
     {
+        if (ConnectionExtensions.Config.Dialect == Dialect.SQLServer &&
+            IndexOfLastTopLevel(TrimSemicolon(sql), "ORDER BY") < 0)
+            throw new ArgumentException("SQL Server requires an ORDER BY when using OFFSET/FETCH.");
+        
         var dialect = ConnectionExtensions.Config.Dialect;
         var s = TrimSemicolon(sql);
         var page = paging.PageClamped;
@@ -92,7 +96,6 @@ public static class QuerySqlBuilder
             Dialect.SQLServer => $"{s} OFFSET {offset} ROWS FETCH NEXT {size} ROWS ONLY",
             Dialect.PostgreSQL => $"{s} LIMIT {size} OFFSET {offset}",
             Dialect.MySQL => $"{s} LIMIT {offset}, {size}",
-            Dialect.SQLite => $"{s} LIMIT {size} OFFSET {offset}",
             _ => $"{s} LIMIT {size} OFFSET {offset}"
         };
     }
@@ -108,57 +111,78 @@ public static class QuerySqlBuilder
         var dialect = ConnectionExtensions.Config.Dialect;
         var dp = new DynamicParameters();
 
-        if (filter is null || (filter.Groups?.Length ?? 0) == 0)
+        if (filter is null || filter.Groups.Length == 0)
             return ("", dp);
 
         var groupSql = new List<string>();
         var pIndex = 0;
 
-        foreach (var group in filter.Groups!)
+        foreach (var group in filter.Groups)
         {
             var parts = new List<string>();
-            foreach (var criterion in group.Criteria ?? Array.Empty<FilterCriterion>())
+            foreach (var criterion in group.Criteria)
             {
-                var mapped = MapPropertyToColumn<T>(criterion.ColumnName);
-                if (mapped is null)
+                var conv = new SqlConvention();
+                var col = MapPropertyToColumn<T>(criterion.ColumnName);
+                if (col is null)
                     throw new ArgumentException(
                         $"Unknown column \'{criterion.ColumnName}\' for type {typeof(T).Name}. Only mapped properties are allowed.");
-                var col = EncapsulateIdentifier(mapped, dialect);
 
                 string Param(object? v)
                 {
-                    var name = $"p{pIndex++}";
+                    var name = $"__qk{pIndex++}";
                     dp.Add(name, v);
                     return "@" + name;
                 }
 
-                string Like(string pattern)
+                string EscapeUser(string input)
                 {
-                    var patternEscaped = pattern.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
-                    var name = $"p{pIndex++}";
-                    dp.Add(name, patternEscaped);
+                    return input.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+                }
 
-                    var dialect = ConnectionExtensions.Config.Dialect;
-                    if (dialect == Dialect.PostgreSQL)
-                        return $"{col} ILIKE @{name}";
-                    return $"{col} LIKE @{name} ESCAPE '\\'";
+                string LikeContains(object? v)
+                {
+                    var name = $"__qk{pIndex++}";
+                    var s = Convert.ToString(v);
+                    dp.Add(name, $"%{EscapeUser(s)}%");
+                    return dialect == Dialect.PostgreSQL
+                        ? $"{col} ILIKE @{name}"
+                        : $"{col} LIKE @{name} ESCAPE '\\'";
+                }
+
+                string LikeStartsWith(object? v)
+                {
+                    var name = $"__qk{pIndex++}";
+                    var s = Convert.ToString(v);
+                    dp.Add(name, $"{EscapeUser(s)}%");
+                    return dialect == Dialect.PostgreSQL
+                        ? $"{col} ILIKE @{name}"
+                        : $"{col} LIKE @{name} ESCAPE '\\'";
+                }
+
+                string LikeEndsWith(object? v)
+                {
+                    var name = $"__qk{pIndex++}";
+                    var s = Convert.ToString(v);
+                    dp.Add(name, $"%{EscapeUser(s)}");
+                    return dialect == Dialect.PostgreSQL
+                        ? $"{col} ILIKE @{name}"
+                        : $"{col} LIKE @{name} ESCAPE '\\'";
                 }
 
                 parts.Add(criterion.Operator switch
                 {
                     FilterOperator.Equals => $"{col} = {Param(criterion.Value)}",
                     FilterOperator.NotEquals => $"{col} <> {Param(criterion.Value)}",
-                    FilterOperator.Contains => Like($"%{criterion.Value}%"),
-                    FilterOperator.NotContains => $"NOT ({Like($"%{criterion.Value}%")})",
-                    FilterOperator.StartsWith => Like($"{criterion.Value}%"),
-                    FilterOperator.EndsWith => Like($"%{criterion.Value}"),
+                    FilterOperator.Contains      => LikeContains(criterion.Value),
+                    FilterOperator.NotContains   => $"NOT ({LikeContains(criterion.Value)})",
+                    FilterOperator.StartsWith    => LikeStartsWith(criterion.Value),
+                    FilterOperator.EndsWith      => LikeEndsWith(criterion.Value),
                     FilterOperator.LessThan => $"{col} < {Param(criterion.Value)}",
                     FilterOperator.LessThanOrEqual => $"{col} <= {Param(criterion.Value)}",
                     FilterOperator.GreaterThan => $"{col} > {Param(criterion.Value)}",
                     FilterOperator.GreaterThanOrEqual => $"{col} >= {Param(criterion.Value)}",
-
                     FilterOperator.In => BuildInClause(col, criterion, dp, ref pIndex),
-
                     FilterOperator.Between => $"{col} BETWEEN {Param(criterion.Value)} AND {Param(criterion.Value2)}",
                     FilterOperator.IsNull => $"{col} IS NULL",
                     FilterOperator.IsNotNull => $"{col} IS NOT NULL",
@@ -187,18 +211,16 @@ public static class QuerySqlBuilder
     /// <typeparam name="T">Target projection/DTO or entity type being sorted.</typeparam>
     public static string BuildOrderBy<T>(SortOptions? sort)
     {
-        var dialect = ConnectionExtensions.Config.Dialect;
         if (sort?.Criteria is null || sort.Criteria.Length == 0)
             return "";
 
         var parts = new List<string>();
         foreach (var c in sort.Criteria)
         {
-            var mapped = MapPropertyToColumn<T>(c.ColumnName);
-            if (mapped is null)
+            var col = MapPropertyToColumn<T>(c.ColumnName);
+            if (col is null)
                 throw new ArgumentException(
                     $"Unknown sortable column \'{c.ColumnName}\' for type {typeof(T).Name}. Only mapped properties are allowed.");
-            var col = EncapsulateIdentifier(mapped, dialect);
             var dir = c.Direction == SortDirection.Descending ? "desc" : "asc";
             parts.Add($"{col} {dir}");
         }
@@ -208,67 +230,36 @@ public static class QuerySqlBuilder
 
     /// <summary>
     /// Maps a property (or DTO alias) name on <typeparamref name="T"/> to a database column.
-    /// Honors <see cref="ColumnAttribute"/> if present; otherwise returns the property name as-is.
     /// </summary>
     /// <typeparam name="T">Type declaring the property/alias.</typeparam>
     /// <param name="candidate">Property or alias name.</param>
     /// <returns>Resolved column name or <c>null</c> if the property is unknown.</returns>
     public static string? MapPropertyToColumn<T>(string candidate)
     {
-        var key = (typeof(T), candidate);
+        var key = (typeof(T), candidate.ToLowerInvariant(), ConnectionExtensions.Config.Dialect.ToString());
         return ColMapCache.GetOrAdd(key, k =>
         {
-            var (t, name) = k;
+            var (t, name, _) = k;
             var pi = t.GetProperty(name, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
             if (pi == null) return null;
-            var col = pi.GetCustomAttribute<ColumnAttribute>()?.Name ?? pi.Name;
-            return col;
+            var conv = new SqlConvention();
+            return conv.Encapsulate(conv.GetColumnName(pi));
         });
     }
-
+    
     /// <summary>
     /// Merges two parameter objects (including <see cref="DynamicParameters"/>),
     /// returning a new <see cref="DynamicParameters"/> suitable for Dapper execution.
     /// </summary>
-    /// <param name="a">First parameter object or <c>null</c>.</param>
-    /// <param name="b">Second parameter object or <c>null</c>.</param>
-    public static DynamicParameters MergeParams(DynamicParameters? a, DynamicParameters? b)
+    /// <param name="a"></param>
+    /// <param name="b"></param>
+    /// <returns></returns>
+    public static DynamicParameters MergeParams(object? a, object? b)
     {
         var merged = new DynamicParameters();
         if (a != null) merged.AddDynamicParams(a);
         if (b != null) merged.AddDynamicParams(b);
         return merged;
-    }
-
-    private static string EncapsulateIdentifier(string col, Dialect dialect)
-    {
-        if (string.IsNullOrWhiteSpace(col)) return col;
-
-        static bool IsQuoted(string s) =>
-            (s.StartsWith("[") && s.EndsWith("]")) ||
-            (s.StartsWith(""") && s.EndsWith(""")) ||
-            (s.StartsWith("`") && s.EndsWith("`"));
-
-        static string Enc(string ident, Dialect d)
-        {
-            if (IsQuoted(ident)) return ident;
-            return d switch
-            {
-                Dialect.SQLServer => $"[{ident}]",
-                Dialect.MySQL => $"`{ident}`",
-                _ => $"{ident}"
-            };
-        }
-
-        var lastDot = col.LastIndexOf('.');
-        if (lastDot >= 0)
-        {
-            var prefix = col.Substring(0, lastDot + 1);
-            var ident = col.Substring(lastDot + 1);
-            return prefix + Enc(ident, dialect);
-        }
-
-        return Enc(col, dialect);
     }
 
     private static string RemoveLastTopLevelTail(string sql, string token)
@@ -301,7 +292,7 @@ public static class QuerySqlBuilder
     private static int FindTopLevel(string sql, string token, bool first)
     {
         int depth = 0;
-        bool inSQ = false, inDQ = false, inLine = false, inBlock = false;
+        bool inSq = false, inDq = false, inLine = false, inBlock = false;
 
         int matchIdx = -1;
         for (int i = 0; i < sql.Length; i++)
@@ -324,15 +315,15 @@ public static class QuerySqlBuilder
                 continue;
             }
 
-            if (inSQ)
+            if (inSq)
             {
-                if (c == '\'' && !(i + 1 < sql.Length && sql[i + 1] == '\'')) inSQ = false;
+                if (c == '\'' && !(i + 1 < sql.Length && sql[i + 1] == '\'')) inSq = false;
                 continue;
             }
 
-            if (inDQ)
+            if (inDq)
             {
-                if (c == '"') inDQ = false;
+                if (c == '"') inDq = false;
                 continue;
             }
 
@@ -352,13 +343,13 @@ public static class QuerySqlBuilder
 
             if (c == '\'')
             {
-                inSQ = true;
+                inSq = true;
                 continue;
             }
 
             if (c == '"')
             {
-                inDQ = true;
+                inDq = true;
                 continue;
             }
 
@@ -401,17 +392,14 @@ public static class QuerySqlBuilder
 
     private static string BuildInClause(string col, FilterCriterion criterion, DynamicParameters dp, ref int pIndex)
     {
-        IEnumerable<object> vals =
-            (criterion.Values as IEnumerable<object>)
-            ?? (criterion.Value as IEnumerable<object>)
-            ?? Array.Empty<object>();
+        IEnumerable<object> vals = criterion.Values;
 
         var any = false;
         var names = new List<string>();
         foreach (var v in vals)
         {
             any = true;
-            var pn = $"p{pIndex++}";
+            var pn = $"__qk{pIndex++}";
             dp.Add(pn, v);
             names.Add("@" + pn);
         }

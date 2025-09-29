@@ -14,6 +14,7 @@ using QueryKit.Repositories.Interfaces;
 using QueryKit.Repositories.Paging;
 using QueryKit.Repositories.Sorting;
 using QueryKit.Repositories.Sql;
+using QueryKit.Sql;
 
 namespace QueryKit.Repositories;
 
@@ -25,6 +26,18 @@ namespace QueryKit.Repositories;
 /// <typeparam name="TKey">Primary key type.</typeparam>
 public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository<TEntity, TKey> where  TEntity : class, IBaseEntity<TKey>
 {
+    private static readonly Lazy<(string Sql, bool HasSoftDelete)> SoftDeleteCache =
+        new(() =>
+        {
+            var prop = typeof(TEntity).GetProperties()
+                .FirstOrDefault(p => p.GetCustomAttribute<SoftDeleteAttribute>() != null && p.PropertyType == typeof(bool));
+            if (prop is null) return (Sql: "", HasSoftDelete: false);
+
+            var col = QuerySqlBuilder.MapPropertyToColumn<TEntity>(prop.Name) ?? prop.Name;
+            // we'll create new DynamicParameters per-call; only cache the SQL & column
+            return (Sql: $"{col} = @__qkNotDeleted", HasSoftDelete: true);
+        });
+    
     /// <summary>
     /// Connection factory used to open database connections.
     /// </summary>
@@ -53,8 +66,8 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
             throw new ArgumentNullException(nameof(id));
         }
         
-        using var conn = await OpenConnection();
-        return await conn.GetAsync<TEntity>(id);
+        using var conn = await OpenConnection(cancellationToken);
+        return await conn.GetAsync<TEntity>(id, cancellationToken: cancellationToken);
     }
 
     /// <inheritdoc />
@@ -77,8 +90,11 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
         
         if (string.IsNullOrWhiteSpace(orderBy))
         {
-            var pk = QuerySqlBuilder.MapPropertyToColumn<TEntity>("Id") ?? "Id";
-            orderBy = $"{pk} asc";
+            var idProps = SqlConvention.GetIdProperties(typeof(TEntity));
+            var pkCol = (idProps?.Length ?? 0) > 0
+                ? QuerySqlBuilder.MapPropertyToColumn<TEntity>(idProps![0].Name) ?? idProps[0].Name
+                : (QuerySqlBuilder.MapPropertyToColumn<TEntity>("Id") ?? "Id");
+            orderBy = $"{pkCol} asc";
         }
 
         var p = paging ?? new PageOptions();
@@ -90,7 +106,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
         bool includeDeleted = false,
         CancellationToken cancellationToken = default)
     {
-        using var conn = await OpenConnection();
+        using var conn = await OpenConnection(cancellationToken);
 
         var (whereSql, parameters) = QuerySqlBuilder.BuildWhere<TEntity>(filter);
 
@@ -108,11 +124,15 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
 
         if (string.IsNullOrWhiteSpace(orderBy))
         {
-            var pk = QuerySqlBuilder.MapPropertyToColumn<TEntity>("Id") ?? "Id";
-            orderBy = $"{pk} asc";
+            var idProps = SqlConvention.GetIdProperties(typeof(TEntity));
+            var pkCol = (idProps?.Length ?? 0) > 0
+                ? QuerySqlBuilder.MapPropertyToColumn<TEntity>(idProps![0].Name) ?? idProps[0].Name
+                : (QuerySqlBuilder.MapPropertyToColumn<TEntity>("Id") ?? "Id");
+            orderBy = $"{pkCol} asc";
         }
 
-        var results = await conn.GetListAsync<TEntity>(whereSql, parameters, cancellationToken: cancellationToken);
+        var results =
+            await conn.GetListAsync<TEntity>(whereSql, parameters, orderBy, cancellationToken: cancellationToken);
         return results.ToList();
     }
 
@@ -140,8 +160,8 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
             parameters = new { __val = value };
         }
 
-        using var conn = await OpenConnection();
-        var count = await conn.RecordCountAsync<TEntity>(where, parameters);
+        using var conn = await OpenConnection(cancellationToken);
+        var count = await conn.RecordCountAsync<TEntity>(where, parameters, cancellationToken: cancellationToken);
         return count == 0;
     }
 
@@ -178,7 +198,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
                 parameters.AddDynamicParams(softParams);
         }
 
-        using var conn = await OpenConnection();
+        using var conn = await OpenConnection(cancellationToken);
         var count = await conn.RecordCountAsync<TEntity>(where, parameters, cancellationToken: cancellationToken);
         return count == 0;
     }
@@ -188,7 +208,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     /// </summary>
     protected async Task<TEntity?> GetAsync(string sql, object? parameters, CancellationToken cancellationToken = default)
     {
-        using var conn = await OpenConnection();
+        using var conn = await OpenConnection(cancellationToken);
         var cmd = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
         return await conn.QueryFirstOrDefaultAsync<TEntity>(cmd);
     }
@@ -198,7 +218,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     /// </summary>
     protected async Task<IList<TEntity>> GetListAsync(string sql, object? parameters, CancellationToken cancellationToken = default)
     {
-        using var conn = await OpenConnection();
+        using var conn = await OpenConnection(cancellationToken);
         var cmd = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
         var rows = await conn.QueryAsync<TEntity>(cmd);
         return rows.ToList();
@@ -209,7 +229,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     /// </summary>
     protected async Task<T?> GetAsync<T>(string sql, object? parameters, CancellationToken cancellationToken = default)
     {
-        using var conn = await OpenConnection();
+        using var conn = await OpenConnection(cancellationToken);
         var cmd = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
         return await conn.QueryFirstOrDefaultAsync<T>(cmd);
     }
@@ -219,7 +239,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     /// </summary>
     protected async Task<IList<T>> GetListAsync<T>(string sql, object? parameters, CancellationToken cancellationToken = default)
     {
-        using var conn = await OpenConnection();
+        using var conn = await OpenConnection(cancellationToken);
         var cmd = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
         var rows = await conn.QueryAsync<T>(cmd);
         return rows.ToList();
@@ -229,17 +249,20 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     /// Gets a paged list of records of type <typeparamref name="T"/> using the provided SQL, parameters, and optional filtering, sorting, and paging options.
     /// </summary>
     protected async Task<PageResult<T>> GetListPagedAsync<T>(string sql, object? parameters, FilterOptions? filter, SortOptions? sort, PageOptions? paging,
-        CancellationToken cancellationToken = default)
+        bool includeDeleted = false, CancellationToken cancellationToken = default)
     {
         paging ??= new PageOptions();
         
         var (whereSql, whereParams) = QuerySqlBuilder.BuildWhere<T>(filter);
-        
-        var (softSql, softParams) = BuildNotDeletedPredicate(DefaultAlias);
-        if (!string.IsNullOrWhiteSpace(softSql))
+
+        if (!includeDeleted && typeof(T) == typeof(TEntity))
         {
-            whereSql = string.IsNullOrWhiteSpace(whereSql) ? softSql : $"{whereSql} AND {softSql}";
-            whereParams = QuerySqlBuilder.MergeParams(whereParams, softParams);
+            var (softSql, softParams) = BuildNotDeletedPredicate(DefaultAlias);
+            if (!string.IsNullOrWhiteSpace(softSql))
+            {
+                whereSql = string.IsNullOrWhiteSpace(whereSql) ? softSql : $"{whereSql} AND {softSql}";
+                whereParams = QuerySqlBuilder.MergeParams(whereParams, softParams);
+            }
         }
         
         var orderBy = QuerySqlBuilder.BuildOrderBy<T>(sort);
@@ -256,7 +279,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
         
         var pagedSql = QuerySqlBuilder.AppendPaging(withOrder, paging);
 
-        using var conn = await OpenConnection();
+        using var conn = await OpenConnection(cancellationToken);
         var dataCmd  = new CommandDefinition(pagedSql, dp, cancellationToken: cancellationToken);
         var countCmd = new CommandDefinition(countSql, dp, cancellationToken: cancellationToken);
 
@@ -279,7 +302,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
         var dp = new DynamicParameters(parameters);
         var pagedSql = QuerySqlBuilder.AppendPaging(dataSql, paging);
 
-        using var conn = await OpenConnection();
+        using var conn = await OpenConnection(cancellationToken);
         var dataCmd  = new CommandDefinition(pagedSql, dp, cancellationToken: cancellationToken);
         var countCmd = new CommandDefinition(countSql, dp, cancellationToken: cancellationToken);
 
@@ -294,13 +317,13 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     /// Override to customize connection behavior.
     /// </summary>
     /// <returns>An open <see cref="IDbConnection"/>.</returns>
-    protected async Task<IDbConnection> OpenConnection()
+    protected async Task<IDbConnection> OpenConnection(CancellationToken cancellationToken = default)
     {
         var conn = _factory.Create();
 
         if (conn is DbConnection dbConn)
         {
-            await dbConn.OpenAsync();
+            await dbConn.OpenAsync(cancellationToken);
         }
         else
         {
@@ -316,9 +339,10 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     protected async Task<PageResult<TEntity>> GetPagedAsync(string whereSql, string orderBy, object? parameters,
         int page, int pageSize, CancellationToken cancellationToken = default)
     {
-        using var conn = await OpenConnection();
-        var items = await conn.GetListPagedAsync<TEntity>(page, pageSize, whereSql, orderBy, parameters);
-        var total = await conn.RecordCountAsync<TEntity>(whereSql, parameters);
+        using var conn = await OpenConnection(cancellationToken);
+        var items = await conn.GetListPagedAsync<TEntity>(page, pageSize, whereSql, orderBy,
+            parameters, cancellationToken: cancellationToken);
+        var total = await conn.RecordCountAsync<TEntity>(whereSql, parameters, cancellationToken: cancellationToken);
         return new PageResult<TEntity>
         {
             Items = items.ToList(),
@@ -340,16 +364,21 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
 
     private static (string whereSql, DynamicParameters? parameters) BuildNotDeletedPredicate(string? alias = null)
     {
-        var prop = typeof(TEntity).GetProperties()
-            .FirstOrDefault(p => p.GetCustomAttribute<SoftDeleteAttribute>() != null && p.PropertyType == typeof(bool));
-        if (prop is null) return ("", null);
+        var cached = SoftDeleteCache.Value;
+        if (!cached.HasSoftDelete) return ("", null);
+        
+        var parms = new DynamicParameters();
+        parms.Add("__qkNotDeleted", false);
 
-        var col = QuerySqlBuilder.MapPropertyToColumn<TEntity>(prop.Name) ?? prop.Name;
-        var qualified = string.IsNullOrWhiteSpace(alias) ? col : $"{alias}.{col}";
+        var sql = cached.Sql;
 
-        var dp = new DynamicParameters();
-        dp.Add("__NotDeleted", false);
+        if (!string.IsNullOrWhiteSpace(alias))
+        {
+            var conv = new SqlConvention();
+            var qualified = $"{conv.Encapsulate(alias!)}.{sql}";
+            return (qualified, parms);
+        }
 
-        return ($"{qualified} = @__NotDeleted", dp);
+        return (sql, parms);
     }
 }

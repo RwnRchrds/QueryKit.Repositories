@@ -33,7 +33,7 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
     /// <inheritdoc/>
     public async Task<TEntity> InsertAsync(TEntity entity, CancellationToken cancellationToken = default)
     {
-        using var conn = await OpenConnection();
+        using var conn = await OpenConnection(cancellationToken);
         
         var result = await conn.InsertAsync<TKey, TEntity>(entity, cancellationToken: cancellationToken);
 
@@ -47,7 +47,7 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
     /// <inheritdoc/>
     public async Task<TEntity> UpdateAsync(TEntity entity, CancellationToken cancellationToken = default)
     {
-        using var conn = await OpenConnection();
+        using var conn = await OpenConnection(cancellationToken);
 
         await conn.UpdateAsync(entity, cancellationToken: cancellationToken);
         
@@ -70,12 +70,12 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
     /// <inheritdoc/>
     public async Task<bool> DeleteAsync(TKey id, CancellationToken cancellationToken = default)
     {
-        if (id == null)
+        if (EqualityComparer<TKey>.Default.Equals(id, default!))
         {
-            throw new ArgumentException(nameof(id));
+            throw new ArgumentException("id must not be the default value.", nameof(id));
         }
-        
-        using var conn = await OpenConnection();
+
+        using var conn = await OpenConnection(cancellationToken);
         
         var entity = await conn.GetAsync<TEntity?>(id);
 
@@ -115,15 +115,15 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
     /// <inheritdoc/>
     public async Task<bool> UndeleteAsync(TKey id, CancellationToken cancellationToken = default)
     {
-        if (id is null)
+        if (EqualityComparer<TKey>.Default.Equals(id, default!))
         {
-            throw new ArgumentException(nameof(id));
+            throw new ArgumentException("id must not be the default value.", nameof(id));
         }
         
         if (SoftDeleteProp is null)
             return false;
 
-        using var conn = await OpenConnection();
+        using var conn = await OpenConnection(cancellationToken);
         var entity = await conn.GetAsync<TEntity?>(id);
         if (entity is null) return false;
 
