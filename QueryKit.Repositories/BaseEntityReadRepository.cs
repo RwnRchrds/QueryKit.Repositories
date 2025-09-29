@@ -117,7 +117,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     }
 
     /// <inheritdoc />
-    public async Task<bool> IsUniqueIncludingDeletedAsync(string columnName, string value,
+    public async Task<bool> IsUniqueIncludingDeletedAsync(string columnName, string? value,
         CancellationToken cancellationToken = default)
     {
         var resolved = ResolveColumnOrNull(columnName);
@@ -179,8 +179,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
         }
 
         using var conn = await OpenConnection();
-        var cmd = new CommandDefinition($"SELECT 1", cancellationToken: cancellationToken);
-        var count = await conn.RecordCountAsync<TEntity>(where, parameters);
+        var count = await conn.RecordCountAsync<TEntity>(where, parameters, cancellationToken: cancellationToken);
         return count == 0;
     }
     
@@ -247,7 +246,8 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
         
         var dp = new DynamicParameters();
         if (parameters  is not null) dp.AddDynamicParams(parameters);
-        if (whereParams is not null) dp.AddDynamicParams(whereParams);
+        
+        dp.AddDynamicParams(whereParams);
         
         var withWhere = QuerySqlBuilder.InjectWhere(sql, whereSql);
         var withOrder = QuerySqlBuilder.ReplaceOrder(withWhere, orderBy);

@@ -35,10 +35,10 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
     {
         using var conn = await OpenConnection();
         
-        var result = await conn.InsertAsync<TKey, TEntity>(entity);
-        
-        entity.Id = result;
-        
+        var result = await conn.InsertAsync<TKey, TEntity>(entity, cancellationToken: cancellationToken);
+
+        if (result != null) entity.Id = result;
+
         await OnInsertAsync(entity, cancellationToken);
         
         return entity;
@@ -49,7 +49,7 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
     {
         using var conn = await OpenConnection();
 
-        await conn.UpdateAsync(entity);
+        await conn.UpdateAsync(entity, cancellationToken: cancellationToken);
         
         await OnUpdateAsync(entity, cancellationToken);
         
@@ -86,7 +86,7 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
 
         if (SoftDeleteProp is null)
         {
-            var affected = await conn.DeleteAsync<TEntity>(id);
+            var affected = await conn.DeleteAsync<TEntity>(id, cancellationToken: cancellationToken);
             if (affected > 0)
             {
                 await OnDeleteAsync(entity, false, cancellationToken);
@@ -96,7 +96,7 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
         
         SoftDeleteProp.SetValue(entity, true);
         
-        var rows = await conn.UpdateAsync(entity);
+        var rows = await conn.UpdateAsync(entity, cancellationToken: cancellationToken);
 
         if (rows > 0)
         {
@@ -137,7 +137,6 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
     /// </summary>
     protected bool IsNewEntity(TEntity entity)
     {
-        if (entity == null) return true;
         return EqualityComparer<TKey>.Default.Equals(entity.Id, default!);
     }
 

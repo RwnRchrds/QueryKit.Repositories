@@ -55,7 +55,7 @@
         <PrivateAssets>all</PrivateAssets>
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       </PackageReference>
-      <PackageReference Include="Rowan.QueryKit" Version="0.9.3" />
+      <PackageReference Include="Rowan.QueryKit" Version="0.9.5" />
     </ItemGroup>
     
     <ItemGroup>
