@@ -31,33 +31,29 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
     }
 
     /// <inheritdoc/>
-    public async Task<TEntity> InsertAsync(TEntity entity, CancellationToken cancellationToken = default)
+    public virtual async Task<TEntity> InsertAsync(TEntity entity, CancellationToken cancellationToken = default)
     {
         using var conn = await OpenConnection(cancellationToken);
         
         var result = await conn.InsertAsync<TKey, TEntity>(entity, cancellationToken: cancellationToken);
 
         if (result != null) entity.Id = result;
-
-        await OnInsertAsync(entity, cancellationToken);
         
         return entity;
     }
 
     /// <inheritdoc/>
-    public async Task<TEntity> UpdateAsync(TEntity entity, CancellationToken cancellationToken = default)
+    public virtual async Task<TEntity> UpdateAsync(TEntity entity, CancellationToken cancellationToken = default)
     {
         using var conn = await OpenConnection(cancellationToken);
 
         await conn.UpdateAsync(entity, cancellationToken: cancellationToken);
         
-        await OnUpdateAsync(entity, cancellationToken);
-        
         return entity;
     }
 
     /// <inheritdoc/>
-    public async Task<TEntity> InsertOrUpdateAsync(TEntity entity, CancellationToken cancellationToken = default)
+    public virtual async Task<TEntity> InsertOrUpdateAsync(TEntity entity, CancellationToken cancellationToken = default)
     {
         if (IsNewEntity(entity))
         {
@@ -68,7 +64,7 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
     }
 
     /// <inheritdoc/>
-    public async Task<bool> DeleteAsync(TKey id, CancellationToken cancellationToken = default)
+    public virtual async Task<bool> DeleteAsync(TKey id, CancellationToken cancellationToken = default)
     {
         if (EqualityComparer<TKey>.Default.Equals(id, default!))
         {
@@ -87,21 +83,12 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
         if (SoftDeleteProp is null)
         {
             var affected = await conn.DeleteAsync<TEntity>(id, cancellationToken: cancellationToken);
-            if (affected > 0)
-            {
-                await OnDeleteAsync(entity, false, cancellationToken);
-            }
             return affected > 0;
         }
         
         SoftDeleteProp.SetValue(entity, true);
         
         var rows = await conn.UpdateAsync(entity, cancellationToken: cancellationToken);
-
-        if (rows > 0)
-        {
-            await OnDeleteAsync(entity, true, cancellationToken);
-        }
 
         return rows > 0;
     }
@@ -138,30 +125,5 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
     protected bool IsNewEntity(TEntity entity)
     {
         return EqualityComparer<TKey>.Default.Equals(entity.Id, default!);
-    }
-
-    /// <summary>
-    /// Custom logic to execute after an entity is inserted.
-    /// </summary>
-    protected virtual async Task OnInsertAsync(TEntity entity, CancellationToken cancellationToken = default)
-    {
-        await Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Custom logic to execute after an entity is updated.
-    /// </summary>
-    protected virtual async Task OnUpdateAsync(TEntity entity, CancellationToken cancellationToken = default)
-    {
-        await Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Custom logic to execute after an entity is deleted.
-    /// </summary>
-    protected virtual async Task OnDeleteAsync(TEntity entity, bool wasSoftDelete,
-        CancellationToken cancellationToken = default)
-    {
-        await Task.CompletedTask;
     }
 }

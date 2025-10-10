@@ -59,7 +59,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     }
     
     /// <inheritdoc />
-    public async Task<TEntity?> GetByIdAsync(TKey id, CancellationToken cancellationToken = default)
+    public virtual async Task<TEntity?> GetByIdAsync(TKey id, CancellationToken cancellationToken = default)
     {
         if (id is null)
         {
@@ -71,7 +71,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     }
 
     /// <inheritdoc />
-    public async Task<PageResult<TEntity>> GetListPagedAsync(FilterOptions? filter = null, SortOptions? sort = null,
+    public virtual async Task<PageResult<TEntity>> GetListPagedAsync(FilterOptions? filter = null, SortOptions? sort = null,
         PageOptions? paging = null, bool includeDeleted = false, CancellationToken cancellationToken = default)
     {
         var (whereSql, parameters) = QuerySqlBuilder.BuildWhere<TEntity>(filter);
@@ -102,7 +102,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     }
     
     /// <inheritdoc />
-    public async Task<IList<TEntity>> GetListAsync(FilterOptions? filter = null, SortOptions? sort = null,
+    public virtual async Task<IList<TEntity>> GetListAsync(FilterOptions? filter = null, SortOptions? sort = null,
         bool includeDeleted = false,
         CancellationToken cancellationToken = default)
     {
@@ -137,7 +137,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     }
 
     /// <inheritdoc />
-    public async Task<bool> IsUniqueIncludingDeletedAsync(string columnName, string? value,
+    public virtual async Task<bool> IsUniqueIncludingDeletedAsync(string columnName, string? value,
         CancellationToken cancellationToken = default)
     {
         var resolved = ResolveColumnOrNull(columnName);
@@ -166,7 +166,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     }
 
     /// <inheritdoc />
-    public async Task<bool> IsUniqueExcludingDeletedAsync(string columnName, string? value,
+    public virtual async Task<bool> IsUniqueExcludingDeletedAsync(string columnName, string? value,
         CancellationToken cancellationToken = default)
     {
         var resolved = ResolveColumnOrNull(columnName);
@@ -206,7 +206,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     /// <summary>
     /// Gets a single entity using the provided SQL and parameters.
     /// </summary>
-    protected async Task<TEntity?> GetAsync(string sql, object? parameters, CancellationToken cancellationToken = default)
+    protected virtual async Task<TEntity?> GetAsync(string sql, object? parameters, CancellationToken cancellationToken = default)
     {
         using var conn = await OpenConnection(cancellationToken);
         var cmd = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
@@ -216,7 +216,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     /// <summary>
     /// Gets a list of entities using the provided SQL and parameters.
     /// </summary>
-    protected async Task<IList<TEntity>> GetListAsync(string sql, object? parameters, CancellationToken cancellationToken = default)
+    protected virtual async Task<IList<TEntity>> GetListAsync(string sql, object? parameters, CancellationToken cancellationToken = default)
     {
         using var conn = await OpenConnection(cancellationToken);
         var cmd = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
@@ -227,7 +227,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     /// <summary>
     /// Gets a single record of type <typeparamref name="T"/> using the provided SQL and parameters.
     /// </summary>
-    protected async Task<T?> GetAsync<T>(string sql, object? parameters, CancellationToken cancellationToken = default)
+    protected virtual async Task<T?> GetAsync<T>(string sql, object? parameters, CancellationToken cancellationToken = default)
     {
         using var conn = await OpenConnection(cancellationToken);
         var cmd = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
@@ -237,7 +237,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     /// <summary>
     /// Gets a list of records of type <typeparamref name="T"/> using the provided SQL and parameters.
     /// </summary>
-    protected async Task<IList<T>> GetListAsync<T>(string sql, object? parameters, CancellationToken cancellationToken = default)
+    protected virtual async Task<IList<T>> GetListAsync<T>(string sql, object? parameters, CancellationToken cancellationToken = default)
     {
         using var conn = await OpenConnection(cancellationToken);
         var cmd = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
@@ -248,7 +248,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     /// <summary>
     /// Gets a paged list of records of type <typeparamref name="T"/> using the provided SQL, parameters, and optional filtering, sorting, and paging options.
     /// </summary>
-    protected async Task<PageResult<T>> GetListPagedAsync<T>(string sql, object? parameters, FilterOptions? filter, SortOptions? sort, PageOptions? paging,
+    protected virtual async Task<PageResult<T>> GetListPagedAsync<T>(string sql, object? parameters, FilterOptions? filter, SortOptions? sort, PageOptions? paging,
         bool includeDeleted = false, CancellationToken cancellationToken = default)
     {
         paging ??= new PageOptions();
@@ -292,7 +292,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     /// <summary>
     /// Gets a paged list of records of type <typeparamref name="T"/> using the provided SQL for data retrieval and counting, along with parameters and paging options.
     /// </summary>
-    protected async Task<PageResult<T>> GetListPagedAsync<T>(
+    protected virtual async Task<PageResult<T>> GetListPagedAsync<T>(
         string dataSql,
         string countSql,
         object? parameters,
@@ -317,7 +317,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     /// Override to customize connection behavior.
     /// </summary>
     /// <returns>An open <see cref="IDbConnection"/>.</returns>
-    protected async Task<IDbConnection> OpenConnection(CancellationToken cancellationToken = default)
+    protected virtual async Task<IDbConnection> OpenConnection(CancellationToken cancellationToken = default)
     {
         var conn = _factory.Create();
 
@@ -336,7 +336,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     /// <summary>
     /// Gets a paged list of <typeparamref name="TEntity"/> using the provided WHERE clause, ORDER BY clause, parameters, and paging options.
     /// </summary>
-    protected async Task<PageResult<TEntity>> GetPagedAsync(string whereSql, string orderBy, object? parameters,
+    protected virtual async Task<PageResult<TEntity>> GetPagedAsync(string whereSql, string orderBy, object? parameters,
         int page, int pageSize, CancellationToken cancellationToken = default)
     {
         using var conn = await OpenConnection(cancellationToken);
