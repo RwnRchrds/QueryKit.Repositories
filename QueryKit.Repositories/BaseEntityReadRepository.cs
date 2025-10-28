@@ -251,8 +251,6 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     protected virtual async Task<PageResult<T>> GetListPagedAsync<T>(string sql, object? parameters, FilterOptions? filter, SortOptions? sort, PageOptions? paging,
         bool includeDeleted = false, CancellationToken cancellationToken = default)
     {
-        paging ??= new PageOptions();
-        
         var (whereSql, whereParams) = QuerySqlBuilder.BuildWhere<T>(filter);
 
         if (!includeDeleted && typeof(T) == typeof(TEntity))
@@ -274,13 +272,15 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
         
         var withWhere = QuerySqlBuilder.InjectWhere(sql, whereSql);
         var withOrder = QuerySqlBuilder.ReplaceOrder(withWhere, orderBy);
+
+        var querySql = paging is not null
+            ? QuerySqlBuilder.AppendPaging(withOrder, paging)
+            : withOrder;
         
         var countSql = $"SELECT COUNT(1) FROM ({QuerySqlBuilder.StripTrailingOrder(withOrder)}) q";
-        
-        var pagedSql = QuerySqlBuilder.AppendPaging(withOrder, paging);
 
         using var conn = await OpenConnection(cancellationToken);
-        var dataCmd  = new CommandDefinition(pagedSql, dp, cancellationToken: cancellationToken);
+        var dataCmd  = new CommandDefinition(querySql, dp, cancellationToken: cancellationToken);
         var countCmd = new CommandDefinition(countSql, dp, cancellationToken: cancellationToken);
 
         var items = (await conn.QueryAsync<T>(dataCmd)).ToList();
