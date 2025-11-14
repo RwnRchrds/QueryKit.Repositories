@@ -27,13 +27,13 @@ public interface IBaseEntityRepository<TEntity, TKey> : IBaseEntityReadRepositor
     /// Deletes an entity by primary key. If a boolean property has <see cref="Attributes.SoftDeleteAttribute"/>,
     /// the entity is soft-deleted instead.
     /// </summary>
-    Task<bool> DeleteAsync(TKey id, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync(TKey id, CancellationToken cancellationToken = default, bool softDelete = true);
     
     /// <summary>
     /// Deletes an entity. If a boolean property has <see cref="Attributes.SoftDeleteAttribute"/>,
     /// the entity is soft-deleted instead.
     /// </summary>
-    Task<bool> DeleteAsync(TEntity entity, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync(TEntity entity, CancellationToken cancellationToken = default, bool softDelete = true);
     
     /// <summary>
     /// Undeletes a soft-deleted entity by primary key. If no boolean property has <see cref="Attributes.SoftDeleteAttribute"/>,

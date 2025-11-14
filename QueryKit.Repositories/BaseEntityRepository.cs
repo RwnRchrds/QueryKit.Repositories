@@ -64,7 +64,7 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
     }
 
     /// <inheritdoc/>
-    public virtual async Task<bool> DeleteAsync(TKey id, CancellationToken cancellationToken = default)
+    public virtual async Task<bool> DeleteAsync(TKey id, CancellationToken cancellationToken = default, bool softDelete = true)
     {
         if (EqualityComparer<TKey>.Default.Equals(id, default!))
         {
@@ -80,7 +80,7 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
             return false;
         }
 
-        if (SoftDeleteProp is null)
+        if (!softDelete || SoftDeleteProp is null)
         {
             var affected = await conn.DeleteAsync<TEntity>(id, cancellationToken: cancellationToken);
             return affected > 0;
@@ -94,9 +94,9 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
     }
 
     /// <inheritdoc/>
-    public async Task<bool> DeleteAsync(TEntity entity, CancellationToken cancellationToken = default)
+    public async Task<bool> DeleteAsync(TEntity entity, CancellationToken cancellationToken = default, bool softDelete = true)
     {
-        return await DeleteAsync(entity.Id, cancellationToken);
+        return await DeleteAsync(entity.Id, cancellationToken, softDelete);
     }
     
     /// <inheritdoc/>
