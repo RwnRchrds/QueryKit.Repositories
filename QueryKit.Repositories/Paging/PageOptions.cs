@@ -23,12 +23,12 @@ public sealed record PageOptions
     /// <summary>
     /// 1-based page number. Values less than 1 will be clamped to 1.
     /// </summary>
-    public int Page { get; init; } = DefaultPage;
+    public int Page { get; set; } = DefaultPage;
     
     /// <summary>
     /// Page size requested. Values less than 1 will be clamped to 1; values greater than <see cref="MaxPageSize"/> will be clamped.
     /// </summary>
-    public int PageSize { get; init; } = DefaultPageSize;
+    public int PageSize { get; set; } = DefaultPageSize;
     
     /// <summary>
     /// Gets the sanitized page number.

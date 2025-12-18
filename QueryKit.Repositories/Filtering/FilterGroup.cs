@@ -11,10 +11,10 @@ public sealed record FilterGroup
     /// <summary>
     /// How criteria inside this group are combined.
     /// </summary>
-    public BoolJoin Join { get; init; }
+    public BoolJoin Join { get; set; }
     
     /// <summary>
     /// The criteria items in this group.
     /// </summary>
-    public FilterCriterion[] Criteria { get; init; } = [];
+    public FilterCriterion[] Criteria { get; set; } = [];
 }

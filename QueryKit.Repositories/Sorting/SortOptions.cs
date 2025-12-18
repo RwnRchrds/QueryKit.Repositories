@@ -10,7 +10,7 @@ public sealed record SortOptions()
     /// <summary>
     /// Sort criteria to apply. Evaluated in array order.
     /// </summary>
-    public SortCriterion[] Criteria { get; init; } = [];
+    public SortCriterion[] Criteria { get; set; } = [];
 
     /// <summary>
     /// Creates a SortOptions instance with a single criterion.

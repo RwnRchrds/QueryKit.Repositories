@@ -11,25 +11,25 @@ public sealed record FilterCriterion
     /// <summary>
     /// Column or DTO property name.
     /// </summary>
-    public required string ColumnName { get; init; }
+    public required string ColumnName { get; set; }
     
     /// <summary>
     /// Operator to apply.
     /// </summary>
-    public required FilterOperator Operator { get; init; }
+    public required FilterOperator Operator { get; set; }
     
     /// <summary>
     /// Primary value; meaning depends on <see cref="Operator"/>.
     /// </summary>
-    public object? Value { get; init; } = null;
+    public object? Value { get; set; } = null;
     
     /// <summary>
     /// Secondary value for operators that require two values (e.g., <see cref="FilterOperator.Between"/>).
     /// </summary>
-    public object? Value2 { get; init; } = null;
+    public object? Value2 { get; set; } = null;
     
     /// <summary>
     /// Value set for <see cref="FilterOperator.In"/>.
     /// </summary>
-    public object[] Values {get; init; } = [];
+    public object[] Values {get; set; } = [];
 }

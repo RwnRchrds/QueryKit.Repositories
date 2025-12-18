@@ -10,12 +10,12 @@ public sealed record FilterOptions
     /// <summary>
     /// How groups are combined.
     /// </summary>
-    public BoolJoin Join { get; init; } = BoolJoin.And;
+    public BoolJoin Join { get; set; } = BoolJoin.And;
     
     /// <summary>
     /// The groups of criteria.
     /// </summary>
-    public FilterGroup[] Groups { get; init; } = [];
+    public FilterGroup[] Groups { get; set; } = [];
 
     /// <summary>
     /// Gets a <see cref="FilterOptions"/> with a single group containing the specified criteria, combined using AND.

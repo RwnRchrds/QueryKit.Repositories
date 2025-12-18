@@ -10,10 +10,10 @@ public sealed record PageResult<TEntity>
     /// <summary>
     /// Items for the current page.
     /// </summary>
-    public required IList<TEntity> Items { get; init; }
+    public required IList<TEntity> Items { get; set; }
     
     /// <summary>
     /// Total number of items available across all pages (without paging applied).
     /// </summary>
-    public required int TotalItems { get; init; }
+    public required int TotalItems { get; set; }
 };
