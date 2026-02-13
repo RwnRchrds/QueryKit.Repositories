@@ -1,5 +1,6 @@
 ﻿using System.Threading;
 using System.Threading.Tasks;
+using QueryKit.Repositories.Exceptions;
 
 namespace QueryKit.Repositories.Interfaces;
 
@@ -17,6 +18,14 @@ public interface IBaseEntityRepository<TEntity, TKey> : IBaseEntityReadRepositor
     /// Updates an existing entity and returns the updated instance.
     /// </summary>
     Task<TEntity> UpdateAsync(TEntity entity, CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Updates an existing entity with optimistic concurrency control.
+    /// The update will only succeed if the current version of the entity matches the expected version.
+    /// If the update fails due to a version mismatch, a <see cref="ConcurrencyException"/> will be thrown.
+    /// </summary>
+    Task<TEntity> UpdateWithVersionAsync(TEntity entity, long expectedVersion,
+        CancellationToken cancellationToken = default);
     
     /// <summary>
     /// Inserts a new entity if it is new, otherwise updates the existing entity.
