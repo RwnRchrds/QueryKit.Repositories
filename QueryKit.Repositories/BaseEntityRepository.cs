@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using QueryKit.Extensions;
 using QueryKit.Repositories.Attributes;
+using QueryKit.Repositories.Exceptions;
 using QueryKit.Repositories.Interfaces;
 
 namespace QueryKit.Repositories;
@@ -16,13 +17,14 @@ namespace QueryKit.Repositories;
 /// </summary>
 /// <typeparam name="TEntity">Entity type.</typeparam>
 /// <typeparam name="TKey">Primary key type.</typeparam>
-public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEntity, TKey>, IBaseEntityRepository<TEntity, TKey> where TEntity : class, IBaseEntity<TKey>
+public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEntity, TKey>,
+    IBaseEntityRepository<TEntity, TKey> where TEntity : class, IBaseEntity<TKey>
 {
     private static readonly PropertyInfo? SoftDeleteProp =
         typeof(TEntity).GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .FirstOrDefault(p => p.GetCustomAttribute<SoftDeleteAttribute>() != null
                                  && p.PropertyType == typeof(bool));
-    
+
     /// <summary>
     /// Creates a new instance of <see cref="BaseEntityRepository{TEntity, TKey}"/>.
     /// </summary>
@@ -34,11 +36,11 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
     public virtual async Task<TEntity> InsertAsync(TEntity entity, CancellationToken cancellationToken = default)
     {
         using var conn = await OpenConnection(cancellationToken);
-        
+
         var result = await conn.InsertAsync<TKey, TEntity>(entity, cancellationToken: cancellationToken);
 
         if (result != null) entity.Id = result;
-        
+
         return entity;
     }
 
@@ -48,23 +50,37 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
         using var conn = await OpenConnection(cancellationToken);
 
         await conn.UpdateAsync(entity, cancellationToken: cancellationToken);
-        
+
         return entity;
     }
 
     /// <inheritdoc/>
-    public virtual async Task<TEntity> InsertOrUpdateAsync(TEntity entity, CancellationToken cancellationToken = default)
+    public virtual async Task<TEntity> UpdateWithVersionAsync(
+        TEntity entity, long expectedVersion, CancellationToken cancellationToken = default)
+    {
+        using var conn = await OpenConnection(cancellationToken);
+
+        var rows = await conn.UpdateWithVersionAsync(entity, expectedVersion, cancellationToken: cancellationToken);
+        if (rows == 0) throw new ConcurrencyException("No rows were updated. The entity may have been modified or deleted.");
+
+        return entity;
+    }
+
+    /// <inheritdoc/>
+    public virtual async Task<TEntity> InsertOrUpdateAsync(TEntity entity,
+        CancellationToken cancellationToken = default)
     {
         if (IsNewEntity(entity))
         {
             return await InsertAsync(entity, cancellationToken);
         }
-        
+
         return await UpdateAsync(entity, cancellationToken);
     }
 
     /// <inheritdoc/>
-    public virtual async Task<bool> DeleteAsync(TKey id, CancellationToken cancellationToken = default, bool softDelete = true)
+    public virtual async Task<bool> DeleteAsync(TKey id, CancellationToken cancellationToken = default,
+        bool softDelete = true)
     {
         if (EqualityComparer<TKey>.Default.Equals(id, default!))
         {
@@ -72,7 +88,7 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
         }
 
         using var conn = await OpenConnection(cancellationToken);
-        
+
         var entity = await conn.GetAsync<TEntity?>(id);
 
         if (entity is null)
@@ -85,37 +101,38 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
             var affected = await conn.DeleteAsync<TEntity>(id, cancellationToken: cancellationToken);
             return affected > 0;
         }
-        
+
         SoftDeleteProp.SetValue(entity, true);
-        
+
         var rows = await conn.UpdateAsync(entity, cancellationToken: cancellationToken);
 
         return rows > 0;
     }
 
     /// <inheritdoc/>
-    public async Task<bool> DeleteAsync(TEntity entity, CancellationToken cancellationToken = default, bool softDelete = true)
+    public virtual async Task<bool> DeleteAsync(TEntity entity, CancellationToken cancellationToken = default,
+        bool softDelete = true)
     {
         return await DeleteAsync(entity.Id, cancellationToken, softDelete);
     }
-    
+
     /// <inheritdoc/>
-    public async Task<bool> UndeleteAsync(TKey id, CancellationToken cancellationToken = default)
+    public virtual async Task<bool> UndeleteAsync(TKey id, CancellationToken cancellationToken = default)
     {
         if (EqualityComparer<TKey>.Default.Equals(id, default!))
         {
             throw new ArgumentException("id must not be the default value.", nameof(id));
         }
-        
+
         if (SoftDeleteProp is null)
             return false;
 
         using var conn = await OpenConnection(cancellationToken);
-        var entity = await conn.GetAsync<TEntity?>(id);
+        var entity = await conn.GetAsync<TEntity?>(id, cancellationToken: cancellationToken);
         if (entity is null) return false;
 
         SoftDeleteProp.SetValue(entity, false);
-        var rows = await conn.UpdateAsync(entity);
+        var rows = await conn.UpdateAsync(entity, cancellationToken: cancellationToken);
         return rows > 0;
     }
 
