@@ -22,8 +22,10 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
 {
     private static readonly PropertyInfo? SoftDeleteProp =
         typeof(TEntity).GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .FirstOrDefault(p => p.GetCustomAttribute<SoftDeleteAttribute>() != null
-                                 && p.PropertyType == typeof(bool));
+            .FirstOrDefault(p =>
+                p.CanWrite &&
+                p.GetCustomAttribute<SoftDeleteAttribute>() != null &&
+                p.PropertyType == typeof(bool));
 
     /// <summary>
     /// Creates a new instance of <see cref="BaseEntityRepository{TEntity, TKey}"/>.
@@ -89,7 +91,7 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
 
         using var conn = await OpenConnection(cancellationToken);
 
-        var entity = await conn.GetAsync<TEntity?>(id);
+        var entity = await conn.GetAsync<TEntity?>(id, cancellationToken: cancellationToken);
 
         if (entity is null)
         {

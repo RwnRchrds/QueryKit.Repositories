@@ -5,6 +5,7 @@ using System.Reflection;
 using Dapper;
 using QueryKit.Dialects;
 using QueryKit.Extensions;
+using QueryKit.Metadata;
 using QueryKit.Repositories.Enums;
 using QueryKit.Repositories.Filtering;
 using QueryKit.Repositories.Paging;
@@ -19,8 +20,7 @@ namespace QueryKit.Repositories.Sql;
 /// </summary>
 public static class QuerySqlBuilder
 {
-    private static readonly ConcurrentDictionary<(Type, string, string), string?> ColMapCache
-        = new ConcurrentDictionary<(Type, string, string), string?>();
+    private static readonly ConcurrentDictionary<(Type, string, string), string?> ColMapCache = new();
 
     /// <summary>
     /// Injects a <c>WHERE</c> fragment into <paramref name="sql"/>. If a top-level <c>WHERE</c> exists,
@@ -34,21 +34,22 @@ public static class QuerySqlBuilder
             return TrimSemicolon(sql);
 
         var s = TrimSemicolon(sql);
-        var hasWhere = IndexOfFirstTopLevel(s, "WHERE") >= 0;
 
-        if (hasWhere)
-        {
-            var cut = FirstTopLevelIndexOfAny(s, "ORDER BY", "GROUP BY", "HAVING");
-            if (cut < 0) return $"{s.TrimEnd()} AND {whereClause}";
-            var head = s.Substring(0, cut).TrimEnd();
-            var tail = s.Substring(cut).TrimStart();
-            return $"{head} AND {whereClause} {tail}";
-        }
-        else
-        {
-            var insert = $"WHERE {whereClause}";
-            return InsertBeforeFirstTopLevel(s, insert, "ORDER BY", "GROUP BY", "HAVING");
-        }
+        var whereIdx = IndexOfFirstTopLevel(s, "WHERE");
+        if (whereIdx < 0)
+            return InsertBeforeFirstTopLevel(s, $"WHERE {whereClause}", "ORDER BY", "GROUP BY", "HAVING");
+
+        var cut = FirstTopLevelIndexOfAny(s, "ORDER BY", "GROUP BY", "HAVING");
+        if (cut < 0) cut = s.Length;
+
+        var before = s.Substring(0, whereIdx + "WHERE".Length);
+        var existing = s.Substring(whereIdx + "WHERE".Length, cut - (whereIdx + "WHERE".Length)).Trim();
+        var after = s.Substring(cut);
+
+        if (string.IsNullOrWhiteSpace(existing))
+            return $"{before} {whereClause} {after}".Trim();
+
+        return $"{before} ({existing}) AND ({whereClause}) {after}".Trim();
     }
 
     /// <summary>
@@ -122,7 +123,6 @@ public static class QuerySqlBuilder
             var parts = new List<string>();
             foreach (var criterion in group.Criteria)
             {
-                var conv = new SqlConvention();
                 var col = MapPropertyToColumn<T>(criterion.ColumnName);
                 if (col is null)
                     throw new ArgumentException(
@@ -142,8 +142,10 @@ public static class QuerySqlBuilder
 
                 string LikeContains(object? v)
                 {
-                    var name = $"__qk{pIndex++}";
                     var s = Convert.ToString(v);
+                    if (string.IsNullOrEmpty(s)) return "";
+
+                    var name = $"__qk{pIndex++}";
                     dp.Add(name, $"%{EscapeUser(s)}%");
                     return dialect == Dialect.PostgreSQL
                         ? $"{col} ILIKE @{name}"
@@ -152,9 +154,12 @@ public static class QuerySqlBuilder
 
                 string LikeStartsWith(object? v)
                 {
-                    var name = $"__qk{pIndex++}";
                     var s = Convert.ToString(v);
+                    if (string.IsNullOrEmpty(s)) return "";
+
+                    var name = $"__qk{pIndex++}";
                     dp.Add(name, $"{EscapeUser(s)}%");
+
                     return dialect == Dialect.PostgreSQL
                         ? $"{col} ILIKE @{name}"
                         : $"{col} LIKE @{name} ESCAPE '\\'";
@@ -162,22 +167,29 @@ public static class QuerySqlBuilder
 
                 string LikeEndsWith(object? v)
                 {
-                    var name = $"__qk{pIndex++}";
                     var s = Convert.ToString(v);
+                    if (string.IsNullOrEmpty(s)) return "";
+
+                    var name = $"__qk{pIndex++}";
                     dp.Add(name, $"%{EscapeUser(s)}");
+
                     return dialect == Dialect.PostgreSQL
                         ? $"{col} ILIKE @{name}"
                         : $"{col} LIKE @{name} ESCAPE '\\'";
                 }
 
-                parts.Add(criterion.Operator switch
+                static string NegateOrEmpty(string s) => string.IsNullOrWhiteSpace(s) ? "" : $"NOT ({s})";
+
+                var expr = criterion.Operator switch
                 {
+                    FilterOperator.Equals when criterion.Value is null or DBNull => $"{col} IS NULL",
+                    FilterOperator.NotEquals when criterion.Value is null or DBNull => $"{col} IS NOT NULL",
                     FilterOperator.Equals => $"{col} = {Param(criterion.Value)}",
                     FilterOperator.NotEquals => $"{col} <> {Param(criterion.Value)}",
-                    FilterOperator.Contains      => LikeContains(criterion.Value),
-                    FilterOperator.NotContains   => $"NOT ({LikeContains(criterion.Value)})",
-                    FilterOperator.StartsWith    => LikeStartsWith(criterion.Value),
-                    FilterOperator.EndsWith      => LikeEndsWith(criterion.Value),
+                    FilterOperator.Contains => LikeContains(criterion.Value),
+                    FilterOperator.NotContains => NegateOrEmpty(LikeContains(criterion.Value)),
+                    FilterOperator.StartsWith => LikeStartsWith(criterion.Value),
+                    FilterOperator.EndsWith => LikeEndsWith(criterion.Value),
                     FilterOperator.LessThan => $"{col} < {Param(criterion.Value)}",
                     FilterOperator.LessThanOrEqual => $"{col} <= {Param(criterion.Value)}",
                     FilterOperator.GreaterThan => $"{col} > {Param(criterion.Value)}",
@@ -187,21 +199,25 @@ public static class QuerySqlBuilder
                     FilterOperator.IsNull => $"{col} IS NULL",
                     FilterOperator.IsNotNull => $"{col} IS NOT NULL",
                     _ => $"{col} = {Param(criterion.Value)}"
-                });
+                };
+
+                if (!string.IsNullOrWhiteSpace(expr))
+                    parts.Add(expr);
             }
 
             if (parts.Count > 0)
             {
-                var join = group.Join == BoolJoin.Or ? " or " : " and ";
-                groupSql.Add(string.Join(join, parts));
+                var join = group.Join == BoolJoin.Or ? " OR " : " AND ";
+                var groupExpr = parts.Count == 1 ? parts[0] : $"({string.Join(join, parts)})";
+                groupSql.Add(groupExpr);
             }
         }
 
         if (groupSql.Count == 0)
             return ("", dp);
 
-        var outerJoin = filter.Join == BoolJoin.Or ? " or " : " and ";
-        return (string.Join(outerJoin, groupSql), dp);
+        var outerJoin = filter.Join == BoolJoin.Or ? " OR " : " AND ";
+        return (groupSql.Count == 1 ? groupSql[0] : string.Join(outerJoin, groupSql), dp);
     }
 
     /// <summary>
@@ -236,14 +252,19 @@ public static class QuerySqlBuilder
     /// <returns>Resolved column name or <c>null</c> if the property is unknown.</returns>
     public static string? MapPropertyToColumn<T>(string candidate)
     {
+        candidate = (candidate ?? string.Empty).Trim();
+        if (candidate.Length == 0) return null;
+
         var key = (typeof(T), candidate.ToLowerInvariant(), ConnectionExtensions.Config.Dialect.ToString());
         return ColMapCache.GetOrAdd(key, k =>
         {
             var (t, name, _) = k;
             var pi = t.GetProperty(name, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
             if (pi == null) return null;
-            var conv = new SqlConvention();
-            return conv.Encapsulate(conv.GetColumnName(pi));
+            var conv = CreateConvention();
+            var raw = conv.GetColumnName(pi);
+            if (string.IsNullOrWhiteSpace(raw)) return null;
+            return conv.Encapsulate(raw);
         });
     }
     
@@ -260,6 +281,20 @@ public static class QuerySqlBuilder
         if (a != null) merged.AddDynamicParams(a);
         if (b != null) merged.AddDynamicParams(b);
         return merged;
+    }
+
+    /// <summary>
+    /// Creates a new instance of the default SQL naming convention used for mapping entities to database tables and
+    /// columns.
+    /// </summary>
+    /// <remarks>Use this method to obtain a convention that applies default naming strategies for SQL entity
+    /// mapping. The returned convention can be used to ensure consistent mapping behavior across your
+    /// application.</remarks>
+    /// <returns>A <see cref="SqlConvention"/> instance configured with the standard table and column name resolvers.</returns>
+    public static SqlConvention CreateConvention()
+    {
+        return new SqlConvention(ConnectionExtensions.Config, new TableNameResolver(),
+            new ColumnNameResolver());
     }
 
     private static string RemoveLastTopLevelTail(string sql, string token)
@@ -392,7 +427,7 @@ public static class QuerySqlBuilder
 
     private static string BuildInClause(string col, FilterCriterion criterion, DynamicParameters dp, ref int pIndex)
     {
-        IEnumerable<object> vals = criterion.Values;
+        var vals = criterion.Values ?? Array.Empty<object>();
 
         var any = false;
         var names = new List<string>();
@@ -404,9 +439,6 @@ public static class QuerySqlBuilder
             names.Add("@" + pn);
         }
 
-        if (!any)
-            return "1=0";
-
-        return $"{col} IN ({string.Join(",", names)})";
+        return any ? $"{col} IN ({string.Join(",", names)})" : "1=0";
     }
 }

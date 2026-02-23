@@ -26,18 +26,15 @@ namespace QueryKit.Repositories;
 /// <typeparam name="TKey">Primary key type.</typeparam>
 public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository<TEntity, TKey> where  TEntity : class, IBaseEntity<TKey>
 {
-    private static readonly Lazy<(string Sql, bool HasSoftDelete)> SoftDeleteCache =
+    private static readonly Lazy<(string PropertyName, bool HasSoftDelete)> SoftDeleteCache =
         new(() =>
         {
             var prop = typeof(TEntity).GetProperties()
-                .FirstOrDefault(p => p.GetCustomAttribute<SoftDeleteAttribute>() != null && p.PropertyType == typeof(bool));
-            if (prop is null) return (Sql: "", HasSoftDelete: false);
-
-            var col = QuerySqlBuilder.MapPropertyToColumn<TEntity>(prop.Name) ?? prop.Name;
-            // we'll create new DynamicParameters per-call; only cache the SQL & column
-            return (Sql: $"{col} = @__qkNotDeleted", HasSoftDelete: true);
+                .FirstOrDefault(p => p.GetCustomAttribute<SoftDeleteAttribute>() != null
+                                     && p.PropertyType == typeof(bool));
+            return prop is null ? ("", false) : (prop.Name, true);
         });
-    
+
     /// <summary>
     /// Connection factory used to open database connections.
     /// </summary>
@@ -65,7 +62,10 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
         {
             throw new ArgumentNullException(nameof(id));
         }
-        
+
+        if (EqualityComparer<TKey>.Default.Equals(id, default!))
+            throw new ArgumentException("id must not be the default value.", nameof(id));
+
         using var conn = await OpenConnection(cancellationToken);
         return await conn.GetAsync<TEntity>(id, cancellationToken: cancellationToken);
     }
@@ -262,21 +262,21 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
                 whereParams = QuerySqlBuilder.MergeParams(whereParams, softParams);
             }
         }
-        
+
         var orderBy = QuerySqlBuilder.BuildOrderBy<T>(sort);
-        
+
         var dp = new DynamicParameters();
-        if (parameters  is not null) dp.AddDynamicParams(parameters);
-        
+        if (parameters is not null) dp.AddDynamicParams(parameters);
         dp.AddDynamicParams(whereParams);
-        
+
         var withWhere = QuerySqlBuilder.InjectWhere(sql, whereSql);
+
         var withOrder = QuerySqlBuilder.ReplaceOrder(withWhere, orderBy);
 
         var querySql = paging is not null
             ? QuerySqlBuilder.AppendPaging(withOrder, paging)
             : withOrder;
-        
+
         var countSql = $"SELECT COUNT(1) FROM ({QuerySqlBuilder.StripTrailingOrder(withOrder)}) q";
 
         using var conn = await OpenConnection(cancellationToken);
@@ -366,19 +366,22 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     {
         var cached = SoftDeleteCache.Value;
         if (!cached.HasSoftDelete) return ("", null);
-        
+
         var parms = new DynamicParameters();
         parms.Add("__qkNotDeleted", false);
 
-        var sql = cached.Sql;
+        var conv = QuerySqlBuilder.CreateConvention();
 
-        if (!string.IsNullOrWhiteSpace(alias))
-        {
-            var conv = new SqlConvention();
-            var qualified = $"{conv.Encapsulate(alias!)}.{sql}";
-            return (qualified, parms);
-        }
+        // col is already encapsulated for the CURRENT dialect
+        var col = QuerySqlBuilder.MapPropertyToColumn<TEntity>(cached.PropertyName)
+                  ?? conv.Encapsulate(cached.PropertyName);
 
-        return (sql, parms);
+        // If the mapped column already contains a dot (schema/table/alias qualification),
+        // don't try to prefix another alias.
+        var qualifiedCol = (!string.IsNullOrWhiteSpace(alias) && !col.Contains('.'))
+            ? $"{conv.Encapsulate(alias)}.{col}"
+            : col;
+
+        return ($"{qualifiedCol} = @__qkNotDeleted", parms);
     }
 }
