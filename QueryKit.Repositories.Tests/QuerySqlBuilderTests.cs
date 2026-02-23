@@ -47,7 +47,7 @@ public class QuerySqlBuilderTests
     {
         var baseSql = "SELECT * FROM Students WHERE Age > 15 ORDER BY Name";
         var withWhere = QuerySqlBuilder.InjectWhere(baseSql, "Name LIKE @p0");
-        Assert.Equal("SELECT * FROM Students WHERE Age > 15 AND Name LIKE @p0 ORDER BY Name", withWhere);
+        Assert.Equal("SELECT * FROM Students WHERE (Age > 15) AND (Name LIKE @p0) ORDER BY Name", withWhere);
     }
 
     [Fact]
@@ -448,7 +448,7 @@ SELECT * FROM cte".Trim();
     {
         var baseSql = "SELECT * FROM Students WHERE Age > 10";
         var withWhere = QuerySqlBuilder.InjectWhere(baseSql, "Name IS NOT NULL");
-        Assert.Equal("SELECT * FROM Students WHERE Age > 10 AND Name IS NOT NULL", withWhere);
+        Assert.Equal("SELECT * FROM Students WHERE (Age > 10) AND (Name IS NOT NULL)", withWhere);
     }
 
     [Fact]
