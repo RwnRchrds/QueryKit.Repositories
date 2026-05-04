@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
@@ -35,11 +36,11 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
     }
 
     /// <inheritdoc/>
-    public virtual async Task<TEntity> InsertAsync(TEntity entity, CancellationToken cancellationToken = default)
+    public virtual async Task<TEntity> InsertAsync(TEntity entity, CancellationToken cancellationToken = default, IDbTransaction? transaction = null)
     {
-        using var conn = await OpenConnection(cancellationToken);
+        using var lease = await AcquireConnection(transaction, cancellationToken);
 
-        var result = await conn.InsertAsync<TKey, TEntity>(entity, cancellationToken: cancellationToken);
+        var result = await lease.Connection.InsertAsync<TKey, TEntity>(entity, transaction, cancellationToken: cancellationToken);
 
         if (result != null) entity.Id = result;
 
@@ -47,22 +48,22 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
     }
 
     /// <inheritdoc/>
-    public virtual async Task<TEntity> UpdateAsync(TEntity entity, CancellationToken cancellationToken = default)
+    public virtual async Task<TEntity> UpdateAsync(TEntity entity, CancellationToken cancellationToken = default, IDbTransaction? transaction = null)
     {
-        using var conn = await OpenConnection(cancellationToken);
+        using var lease = await AcquireConnection(transaction, cancellationToken);
 
-        await conn.UpdateAsync(entity, cancellationToken: cancellationToken);
+        await lease.Connection.UpdateAsync(entity, transaction, cancellationToken: cancellationToken);
 
         return entity;
     }
 
     /// <inheritdoc/>
     public virtual async Task<TEntity> UpdateWithVersionAsync(
-        TEntity entity, long expectedVersion, CancellationToken cancellationToken = default)
+        TEntity entity, long expectedVersion, CancellationToken cancellationToken = default, IDbTransaction? transaction = null)
     {
-        using var conn = await OpenConnection(cancellationToken);
+        using var lease = await AcquireConnection(transaction, cancellationToken);
 
-        var rows = await conn.UpdateWithVersionAsync(entity, expectedVersion, cancellationToken: cancellationToken);
+        var rows = await lease.Connection.UpdateWithVersionAsync(entity, expectedVersion, transaction, cancellationToken: cancellationToken);
         if (rows == 0) throw new ConcurrencyException("No rows were updated. The entity may have been modified or deleted.");
 
         return entity;
@@ -70,28 +71,29 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
 
     /// <inheritdoc/>
     public virtual async Task<TEntity> InsertOrUpdateAsync(TEntity entity,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IDbTransaction? transaction = null)
     {
         if (IsNewEntity(entity))
         {
-            return await InsertAsync(entity, cancellationToken);
+            return await InsertAsync(entity, cancellationToken, transaction);
         }
 
-        return await UpdateAsync(entity, cancellationToken);
+        return await UpdateAsync(entity, cancellationToken, transaction);
     }
 
     /// <inheritdoc/>
     public virtual async Task<bool> DeleteAsync(TKey id, CancellationToken cancellationToken = default,
-        bool softDelete = true)
+        bool softDelete = true, IDbTransaction? transaction = null)
     {
         if (EqualityComparer<TKey>.Default.Equals(id, default!))
         {
             throw new ArgumentException("id must not be the default value.", nameof(id));
         }
 
-        using var conn = await OpenConnection(cancellationToken);
+        using var lease = await AcquireConnection(transaction, cancellationToken);
 
-        var entity = await conn.GetAsync<TEntity?>(id, cancellationToken: cancellationToken);
+        var entity = await lease.Connection.GetAsync<TEntity?>(id, transaction, cancellationToken: cancellationToken);
 
         if (entity is null)
         {
@@ -100,26 +102,26 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
 
         if (!softDelete || SoftDeleteProp is null)
         {
-            var affected = await conn.DeleteAsync<TEntity>(id, cancellationToken: cancellationToken);
+            var affected = await lease.Connection.DeleteAsync<TEntity>(id, transaction, cancellationToken: cancellationToken);
             return affected > 0;
         }
 
         SoftDeleteProp.SetValue(entity, true);
 
-        var rows = await conn.UpdateAsync(entity, cancellationToken: cancellationToken);
+        var rows = await lease.Connection.UpdateAsync(entity, transaction, cancellationToken: cancellationToken);
 
         return rows > 0;
     }
 
     /// <inheritdoc/>
     public virtual async Task<bool> DeleteAsync(TEntity entity, CancellationToken cancellationToken = default,
-        bool softDelete = true)
+        bool softDelete = true, IDbTransaction? transaction = null)
     {
-        return await DeleteAsync(entity.Id, cancellationToken, softDelete);
+        return await DeleteAsync(entity.Id, cancellationToken, softDelete, transaction);
     }
 
     /// <inheritdoc/>
-    public virtual async Task<bool> UndeleteAsync(TKey id, CancellationToken cancellationToken = default)
+    public virtual async Task<bool> UndeleteAsync(TKey id, CancellationToken cancellationToken = default, IDbTransaction? transaction = null)
     {
         if (EqualityComparer<TKey>.Default.Equals(id, default!))
         {
@@ -129,12 +131,12 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
         if (SoftDeleteProp is null)
             return false;
 
-        using var conn = await OpenConnection(cancellationToken);
-        var entity = await conn.GetAsync<TEntity?>(id, cancellationToken: cancellationToken);
+        using var lease = await AcquireConnection(transaction, cancellationToken);
+        var entity = await lease.Connection.GetAsync<TEntity?>(id, transaction, cancellationToken: cancellationToken);
         if (entity is null) return false;
 
         SoftDeleteProp.SetValue(entity, false);
-        var rows = await conn.UpdateAsync(entity, cancellationToken: cancellationToken);
+        var rows = await lease.Connection.UpdateAsync(entity, transaction, cancellationToken: cancellationToken);
         return rows > 0;
     }
 

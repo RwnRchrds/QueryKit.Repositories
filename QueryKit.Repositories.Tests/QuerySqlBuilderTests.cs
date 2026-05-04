@@ -596,4 +596,116 @@ SELECT * FROM cte".Trim();
         Assert.Contains("A", names);
         Assert.Contains("B", names);
     }
+
+    [Fact]
+    public void InjectWhere_IgnoresKeywordInsideStringLiteralWithEscapedQuote()
+    {
+        var baseSql = "SELECT * FROM Notes WHERE Body = 'It''s ORDER BY now' ";
+        var withWhere = QuerySqlBuilder.InjectWhere(baseSql, "Id = @p0");
+        Assert.Equal(
+            "SELECT * FROM Notes WHERE (Body = 'It''s ORDER BY now') AND (Id = @p0)",
+            withWhere);
+    }
+
+    [Fact]
+    public void StripTrailingOrder_IgnoresOrderByInsideStringLiteralWithEscapedQuote()
+    {
+        var sql = "SELECT 'a''b ORDER BY x' AS Lit FROM T ORDER BY Id";
+        var stripped = QuerySqlBuilder.StripTrailingOrder(sql);
+        Assert.Equal("SELECT 'a''b ORDER BY x' AS Lit FROM T", stripped);
+    }
+
+    [Fact]
+    public void InjectWhere_DoesNotMatchKeywordSubstringInIdentifier()
+    {
+        var baseSql = "SELECT WHEREVER, ORDERED FROM T";
+        var withWhere = QuerySqlBuilder.InjectWhere(baseSql, "X = 1");
+        Assert.Equal("SELECT WHEREVER, ORDERED FROM T WHERE X = 1", withWhere);
+    }
+
+    [Fact]
+    public void ReplaceOrder_DoesNotMatchOrderByPrefixInIdentifier()
+    {
+        var baseSql = "SELECT ORDER_BY_DATE FROM T";
+        var replaced = QuerySqlBuilder.ReplaceOrder(baseSql, "Id ASC");
+        Assert.Equal("SELECT ORDER_BY_DATE FROM T ORDER BY Id ASC", replaced);
+    }
+
+    [Fact]
+    public void BuildWhere_Like_EscapesBracketsOnSqlServer()
+    {
+        ConnectionExtensions.UseDialect(Dialect.SQLServer);
+
+        var filter = new FilterOptions
+        {
+            Groups = new[]
+            {
+                new FilterGroup
+                {
+                    Criteria = new[]
+                    {
+                        new FilterCriterion
+                            { ColumnName = "Name", Operator = FilterOperator.Contains, Value = "[admin]" }
+                    }
+                }
+            }
+        };
+
+        var (where, dp) = QuerySqlBuilder.BuildWhere<StudentEntity>(filter);
+        Assert.Contains("LIKE @__qk0", where);
+        Assert.Contains("ESCAPE '\\'", where);
+
+        var pName = dp.ParameterNames.Single();
+        var pValue = (string?)dp.Get<object>(pName);
+        Assert.Equal(@"%\[admin]%", pValue);
+    }
+
+    [Fact]
+    public void BuildWhere_Like_DoesNotEscapeBracketsOnPostgres()
+    {
+        ConnectionExtensions.UseDialect(Dialect.PostgreSQL);
+
+        var filter = new FilterOptions
+        {
+            Groups = new[]
+            {
+                new FilterGroup
+                {
+                    Criteria = new[]
+                    {
+                        new FilterCriterion
+                            { ColumnName = "Name", Operator = FilterOperator.Contains, Value = "[admin]" }
+                    }
+                }
+            }
+        };
+
+        var (_, dp) = QuerySqlBuilder.BuildWhere<StudentEntity>(filter);
+        var pName = dp.ParameterNames.Single();
+        var pValue = (string?)dp.Get<object>(pName);
+        Assert.Equal("%[admin]%", pValue);
+    }
+
+    [Fact]
+    public void BuildWhere_UnsupportedOperator_Throws()
+    {
+        ConnectionExtensions.UseDialect(Dialect.SQLServer);
+
+        var filter = new FilterOptions
+        {
+            Groups = new[]
+            {
+                new FilterGroup
+                {
+                    Criteria = new[]
+                    {
+                        new FilterCriterion
+                            { ColumnName = "Age", Operator = (FilterOperator)999, Value = 1 }
+                    }
+                }
+            }
+        };
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => QuerySqlBuilder.BuildWhere<StudentEntity>(filter));
+    }
 }

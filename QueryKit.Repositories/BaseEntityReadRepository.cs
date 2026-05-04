@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
@@ -39,7 +39,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     /// Connection factory used to open database connections.
     /// </summary>
     protected readonly IConnectionFactory _factory;
-    
+
     /// <summary>
     /// If your custom base SQL uses a table alias for the entity table (e.g., <c>FROM Students s</c>),
     /// override this to have soft-delete predicates qualified as <c>s.IsDeleted = 0</c>.
@@ -54,9 +54,9 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     {
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
     }
-    
+
     /// <inheritdoc />
-    public virtual async Task<TEntity?> GetByIdAsync(TKey id, CancellationToken cancellationToken = default)
+    public virtual async Task<TEntity?> GetByIdAsync(TKey id, CancellationToken cancellationToken = default, IDbTransaction? transaction = null)
     {
         if (id is null)
         {
@@ -66,13 +66,13 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
         if (EqualityComparer<TKey>.Default.Equals(id, default!))
             throw new ArgumentException("id must not be the default value.", nameof(id));
 
-        using var conn = await OpenConnection(cancellationToken);
-        return await conn.GetAsync<TEntity>(id, cancellationToken: cancellationToken);
+        using var lease = await AcquireConnection(transaction, cancellationToken);
+        return await lease.Connection.GetAsync<TEntity>(id, transaction, cancellationToken: cancellationToken);
     }
 
     /// <inheritdoc />
     public virtual async Task<PageResult<TEntity>> GetListPagedAsync(FilterOptions? filter = null, SortOptions? sort = null,
-        PageOptions? paging = null, bool includeDeleted = false, CancellationToken cancellationToken = default)
+        PageOptions? paging = null, bool includeDeleted = false, CancellationToken cancellationToken = default, IDbTransaction? transaction = null)
     {
         var (whereSql, parameters) = QuerySqlBuilder.BuildWhere<TEntity>(filter);
 
@@ -87,7 +87,7 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
         }
 
         var orderBy = QuerySqlBuilder.BuildOrderBy<TEntity>(sort);
-        
+
         if (string.IsNullOrWhiteSpace(orderBy))
         {
             var idProps = SqlConvention.GetIdProperties(typeof(TEntity));
@@ -98,15 +98,16 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
         }
 
         var p = paging ?? new PageOptions();
-        return await GetPagedAsync(whereSql, orderBy, parameters, p.PageClamped, p.PageSizeClamped, cancellationToken);
+        return await GetPagedAsync(whereSql, orderBy, parameters, p.PageClamped, p.PageSizeClamped, cancellationToken, transaction);
     }
-    
+
     /// <inheritdoc />
     public virtual async Task<IList<TEntity>> GetListAsync(FilterOptions? filter = null, SortOptions? sort = null,
         bool includeDeleted = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IDbTransaction? transaction = null)
     {
-        using var conn = await OpenConnection(cancellationToken);
+        using var lease = await AcquireConnection(transaction, cancellationToken);
 
         var (whereSql, parameters) = QuerySqlBuilder.BuildWhere<TEntity>(filter);
 
@@ -132,13 +133,14 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
         }
 
         var results =
-            await conn.GetListAsync<TEntity>(whereSql, parameters, orderBy, cancellationToken: cancellationToken);
+            await lease.Connection.GetListAsync<TEntity>(whereSql, parameters, orderBy, transaction, cancellationToken: cancellationToken);
         return results.ToList();
     }
 
     /// <inheritdoc />
     public virtual async Task<bool> IsUniqueIncludingDeletedAsync(string columnName, string? value,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IDbTransaction? transaction = null)
     {
         var resolved = ResolveColumnOrNull(columnName);
         if (resolved is null)
@@ -160,14 +162,15 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
             parameters = new { __val = value };
         }
 
-        using var conn = await OpenConnection(cancellationToken);
-        var count = await conn.RecordCountAsync<TEntity>(where, parameters, cancellationToken: cancellationToken);
+        using var lease = await AcquireConnection(transaction, cancellationToken);
+        var count = await lease.Connection.RecordCountAsync<TEntity>(where, parameters, transaction, cancellationToken: cancellationToken);
         return count == 0;
     }
 
     /// <inheritdoc />
     public virtual async Task<bool> IsUniqueExcludingDeletedAsync(string columnName, string? value,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IDbTransaction? transaction = null)
     {
         var resolved = ResolveColumnOrNull(columnName);
         if (resolved is null)
@@ -198,58 +201,58 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
                 parameters.AddDynamicParams(softParams);
         }
 
-        using var conn = await OpenConnection(cancellationToken);
-        var count = await conn.RecordCountAsync<TEntity>(where, parameters, cancellationToken: cancellationToken);
+        using var lease = await AcquireConnection(transaction, cancellationToken);
+        var count = await lease.Connection.RecordCountAsync<TEntity>(where, parameters, transaction, cancellationToken: cancellationToken);
         return count == 0;
     }
-    
+
     /// <summary>
     /// Gets a single entity using the provided SQL and parameters.
     /// </summary>
-    protected virtual async Task<TEntity?> GetAsync(string sql, object? parameters, CancellationToken cancellationToken = default)
+    protected virtual async Task<TEntity?> GetAsync(string sql, object? parameters, CancellationToken cancellationToken = default, IDbTransaction? transaction = null)
     {
-        using var conn = await OpenConnection(cancellationToken);
-        var cmd = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
-        return await conn.QueryFirstOrDefaultAsync<TEntity>(cmd);
+        using var lease = await AcquireConnection(transaction, cancellationToken);
+        var cmd = new CommandDefinition(sql, parameters, transaction, cancellationToken: cancellationToken);
+        return await lease.Connection.QueryFirstOrDefaultAsync<TEntity>(cmd);
     }
-    
+
     /// <summary>
     /// Gets a list of entities using the provided SQL and parameters.
     /// </summary>
-    protected virtual async Task<IList<TEntity>> GetListAsync(string sql, object? parameters, CancellationToken cancellationToken = default)
+    protected virtual async Task<IList<TEntity>> GetListAsync(string sql, object? parameters, CancellationToken cancellationToken = default, IDbTransaction? transaction = null)
     {
-        using var conn = await OpenConnection(cancellationToken);
-        var cmd = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
-        var rows = await conn.QueryAsync<TEntity>(cmd);
+        using var lease = await AcquireConnection(transaction, cancellationToken);
+        var cmd = new CommandDefinition(sql, parameters, transaction, cancellationToken: cancellationToken);
+        var rows = await lease.Connection.QueryAsync<TEntity>(cmd);
         return rows.ToList();
     }
-    
+
     /// <summary>
     /// Gets a single record of type <typeparamref name="T"/> using the provided SQL and parameters.
     /// </summary>
-    protected virtual async Task<T?> GetAsync<T>(string sql, object? parameters, CancellationToken cancellationToken = default)
+    protected virtual async Task<T?> GetAsync<T>(string sql, object? parameters, CancellationToken cancellationToken = default, IDbTransaction? transaction = null)
     {
-        using var conn = await OpenConnection(cancellationToken);
-        var cmd = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
-        return await conn.QueryFirstOrDefaultAsync<T>(cmd);
+        using var lease = await AcquireConnection(transaction, cancellationToken);
+        var cmd = new CommandDefinition(sql, parameters, transaction, cancellationToken: cancellationToken);
+        return await lease.Connection.QueryFirstOrDefaultAsync<T>(cmd);
     }
-    
+
     /// <summary>
     /// Gets a list of records of type <typeparamref name="T"/> using the provided SQL and parameters.
     /// </summary>
-    protected virtual async Task<IList<T>> GetListAsync<T>(string sql, object? parameters, CancellationToken cancellationToken = default)
+    protected virtual async Task<IList<T>> GetListAsync<T>(string sql, object? parameters, CancellationToken cancellationToken = default, IDbTransaction? transaction = null)
     {
-        using var conn = await OpenConnection(cancellationToken);
-        var cmd = new CommandDefinition(sql, parameters, cancellationToken: cancellationToken);
-        var rows = await conn.QueryAsync<T>(cmd);
+        using var lease = await AcquireConnection(transaction, cancellationToken);
+        var cmd = new CommandDefinition(sql, parameters, transaction, cancellationToken: cancellationToken);
+        var rows = await lease.Connection.QueryAsync<T>(cmd);
         return rows.ToList();
     }
-    
+
     /// <summary>
     /// Gets a paged list of records of type <typeparamref name="T"/> using the provided SQL, parameters, and optional filtering, sorting, and paging options.
     /// </summary>
     protected virtual async Task<PageResult<T>> GetListPagedAsync<T>(string sql, object? parameters, FilterOptions? filter, SortOptions? sort, PageOptions? paging,
-        bool includeDeleted = false, CancellationToken cancellationToken = default)
+        bool includeDeleted = false, CancellationToken cancellationToken = default, IDbTransaction? transaction = null)
     {
         var (whereSql, whereParams) = QuerySqlBuilder.BuildWhere<T>(filter);
 
@@ -279,16 +282,16 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
 
         var countSql = $"SELECT COUNT(1) FROM ({QuerySqlBuilder.StripTrailingOrder(withOrder)}) q";
 
-        using var conn = await OpenConnection(cancellationToken);
-        var dataCmd  = new CommandDefinition(querySql, dp, cancellationToken: cancellationToken);
-        var countCmd = new CommandDefinition(countSql, dp, cancellationToken: cancellationToken);
+        using var lease = await AcquireConnection(transaction, cancellationToken);
+        var dataCmd  = new CommandDefinition(querySql, dp, transaction, cancellationToken: cancellationToken);
+        var countCmd = new CommandDefinition(countSql, dp, transaction, cancellationToken: cancellationToken);
 
-        var items = (await conn.QueryAsync<T>(dataCmd)).ToList();
-        var total = await conn.ExecuteScalarAsync<int>(countCmd);
+        var items = (await lease.Connection.QueryAsync<T>(dataCmd)).ToList();
+        var total = await lease.Connection.ExecuteScalarAsync<int>(countCmd);
 
         return new PageResult<T> { Items = items, TotalItems = total };
     }
-    
+
     /// <summary>
     /// Gets a paged list of records of type <typeparamref name="T"/> using the provided SQL for data retrieval and counting, along with parameters and paging options.
     /// </summary>
@@ -297,17 +300,18 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
         string countSql,
         object? parameters,
         PageOptions paging,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IDbTransaction? transaction = null)
     {
         var dp = new DynamicParameters(parameters);
         var pagedSql = QuerySqlBuilder.AppendPaging(dataSql, paging);
 
-        using var conn = await OpenConnection(cancellationToken);
-        var dataCmd  = new CommandDefinition(pagedSql, dp, cancellationToken: cancellationToken);
-        var countCmd = new CommandDefinition(countSql, dp, cancellationToken: cancellationToken);
+        using var lease = await AcquireConnection(transaction, cancellationToken);
+        var dataCmd  = new CommandDefinition(pagedSql, dp, transaction, cancellationToken: cancellationToken);
+        var countCmd = new CommandDefinition(countSql, dp, transaction, cancellationToken: cancellationToken);
 
-        var items = (await conn.QueryAsync<T>(dataCmd)).ToList();
-        var total = await conn.ExecuteScalarAsync<int>(countCmd);
+        var items = (await lease.Connection.QueryAsync<T>(dataCmd)).ToList();
+        var total = await lease.Connection.ExecuteScalarAsync<int>(countCmd);
 
         return new PageResult<T> { Items = items, TotalItems = total };
     }
@@ -321,35 +325,62 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
     {
         var conn = _factory.Create();
 
-        if (conn is DbConnection dbConn)
+        try
         {
-            await dbConn.OpenAsync(cancellationToken);
+            if (conn is DbConnection dbConn)
+            {
+                await dbConn.OpenAsync(cancellationToken);
+            }
+            else
+            {
+                conn.Open();
+            }
         }
-        else
+        catch
         {
-            conn.Open();
+            conn.Dispose();
+            throw;
         }
 
         return conn;
     }
 
     /// <summary>
+    /// Acquires a connection for the duration of one operation.
+    /// If <paramref name="transaction"/> is supplied, the transaction's connection is borrowed and
+    /// the returned <see cref="ConnectionLease"/> will not dispose it. Otherwise a new connection
+    /// is opened via <see cref="OpenConnection"/> and disposed when the lease is disposed.
+    /// </summary>
+    protected async Task<ConnectionLease> AcquireConnection(IDbTransaction? transaction, CancellationToken cancellationToken = default)
+    {
+        if (transaction is not null)
+        {
+            var borrowed = transaction.Connection
+                ?? throw new InvalidOperationException("The supplied transaction has no associated connection.");
+            return new ConnectionLease(borrowed, ownsConnection: false);
+        }
+
+        var opened = await OpenConnection(cancellationToken);
+        return new ConnectionLease(opened, ownsConnection: true);
+    }
+
+    /// <summary>
     /// Gets a paged list of <typeparamref name="TEntity"/> using the provided WHERE clause, ORDER BY clause, parameters, and paging options.
     /// </summary>
     protected virtual async Task<PageResult<TEntity>> GetPagedAsync(string whereSql, string orderBy, object? parameters,
-        int page, int pageSize, CancellationToken cancellationToken = default)
+        int page, int pageSize, CancellationToken cancellationToken = default, IDbTransaction? transaction = null)
     {
-        using var conn = await OpenConnection(cancellationToken);
-        var items = await conn.GetListPagedAsync<TEntity>(page, pageSize, whereSql, orderBy,
-            parameters, cancellationToken: cancellationToken);
-        var total = await conn.RecordCountAsync<TEntity>(whereSql, parameters, cancellationToken: cancellationToken);
+        using var lease = await AcquireConnection(transaction, cancellationToken);
+        var items = await lease.Connection.GetListPagedAsync<TEntity>(page, pageSize, whereSql, orderBy,
+            parameters, transaction, cancellationToken: cancellationToken);
+        var total = await lease.Connection.RecordCountAsync<TEntity>(whereSql, parameters, transaction, cancellationToken: cancellationToken);
         return new PageResult<TEntity>
         {
             Items = items.ToList(),
             TotalItems = total
         };
     }
-    
+
     private static (string column, PropertyInfo pi)? ResolveColumnOrNull(string candidate)
     {
         if (string.IsNullOrWhiteSpace(candidate)) return null;
@@ -383,5 +414,30 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
             : col;
 
         return ($"{qualifiedCol} = @__qkNotDeleted", parms);
+    }
+
+    /// <summary>
+    /// A leased connection. If the lease was opened by the repository it disposes the connection;
+    /// if it was borrowed from a caller-supplied transaction the connection is left intact.
+    /// </summary>
+    protected readonly struct ConnectionLease : IDisposable
+    {
+        private readonly IDbConnection _connection;
+        private readonly bool _ownsConnection;
+
+        /// <summary>The leased connection. Always open.</summary>
+        public IDbConnection Connection => _connection;
+
+        internal ConnectionLease(IDbConnection connection, bool ownsConnection)
+        {
+            _connection = connection;
+            _ownsConnection = ownsConnection;
+        }
+
+        /// <summary>Disposes the connection if it was opened by the lease; otherwise no-op.</summary>
+        public void Dispose()
+        {
+            if (_ownsConnection) _connection.Dispose();
+        }
     }
 }

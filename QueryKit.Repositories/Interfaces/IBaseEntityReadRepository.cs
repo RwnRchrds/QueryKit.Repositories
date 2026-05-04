@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
+using System.Data;
 using System.Threading;
 using System.Threading.Tasks;
 using QueryKit.Repositories.Filtering;
@@ -15,30 +16,35 @@ public interface IBaseEntityReadRepository<TEntity, TKey> where TEntity : class,
     /// <summary>
     /// Retrieves an entity by primary key.
     /// </summary>
-    Task<TEntity?> GetByIdAsync(TKey id, CancellationToken cancellationToken = default);
+    Task<TEntity?> GetByIdAsync(TKey id, CancellationToken cancellationToken = default, IDbTransaction? transaction = null);
 
     /// <summary>
     /// Retrieves a paged list of entities with optional filtering and sorting.
     /// </summary>
     Task<PageResult<TEntity>> GetListPagedAsync(FilterOptions? filter = null, SortOptions? sort = null,
         PageOptions? paging = null, bool includeDeleted = false,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IDbTransaction? transaction = null);
 
     /// <summary>
     /// Retrieves a list of entities with optional filtering and sorting.
     /// </summary>
     Task<IList<TEntity>> GetListAsync(FilterOptions? filter = null, SortOptions? sort = null,
-        bool includeDeleted = false, CancellationToken cancellationToken = default);
+        bool includeDeleted = false,
+        CancellationToken cancellationToken = default,
+        IDbTransaction? transaction = null);
 
     /// <summary>
     /// Checks for uniqueness of a column including soft-deleted rows.
     /// </summary>
-    Task<bool> IsUniqueIncludingDeletedAsync(string columnName, string value,
-        CancellationToken cancellationToken = default);
+    Task<bool> IsUniqueIncludingDeletedAsync(string columnName, string? value,
+        CancellationToken cancellationToken = default,
+        IDbTransaction? transaction = null);
 
     /// <summary>
     /// Checks for uniqueness of a column excluding soft-deleted rows.
     /// </summary>
-    Task<bool> IsUniqueExcludingDeletedAsync(string columnName, string value,
-        CancellationToken cancellationToken = default);
+    Task<bool> IsUniqueExcludingDeletedAsync(string columnName, string? value,
+        CancellationToken cancellationToken = default,
+        IDbTransaction? transaction = null);
 }

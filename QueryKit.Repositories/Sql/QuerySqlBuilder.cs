@@ -137,7 +137,11 @@ public static class QuerySqlBuilder
 
                 string EscapeUser(string input)
                 {
-                    return input.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+                    var escaped = input.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+                    // SQL Server LIKE treats [...] as a character class; escape '[' so user input is matched literally.
+                    if (dialect == Dialect.SQLServer)
+                        escaped = escaped.Replace("[", "\\[");
+                    return escaped;
                 }
 
                 string LikeContains(object? v)
@@ -198,7 +202,10 @@ public static class QuerySqlBuilder
                     FilterOperator.Between => $"{col} BETWEEN {Param(criterion.Value)} AND {Param(criterion.Value2)}",
                     FilterOperator.IsNull => $"{col} IS NULL",
                     FilterOperator.IsNotNull => $"{col} IS NOT NULL",
-                    _ => $"{col} = {Param(criterion.Value)}"
+                    _ => throw new ArgumentOutOfRangeException(
+                        nameof(criterion),
+                        criterion.Operator,
+                        $"Unsupported filter operator '{criterion.Operator}'.")
                 };
 
                 if (!string.IsNullOrWhiteSpace(expr))
@@ -352,7 +359,18 @@ public static class QuerySqlBuilder
 
             if (inSq)
             {
-                if (c == '\'' && !(i + 1 < sql.Length && sql[i + 1] == '\'')) inSq = false;
+                if (c == '\'')
+                {
+                    if (i + 1 < sql.Length && sql[i + 1] == '\'')
+                    {
+                        // SQL escapes a single quote inside a literal as '' — consume both and stay in-string.
+                        i++;
+                    }
+                    else
+                    {
+                        inSq = false;
+                    }
+                }
                 continue;
             }
 
@@ -403,13 +421,21 @@ public static class QuerySqlBuilder
             if (depth == 0 && i + token.Length <= sql.Length &&
                 sql.Substring(i, token.Length).Equals(token, StringComparison.OrdinalIgnoreCase))
             {
-                if (first) return i;
-                matchIdx = i;
+                var beforeOk = i == 0 || !IsWordChar(sql[i - 1]);
+                var afterIdx = i + token.Length;
+                var afterOk = afterIdx >= sql.Length || !IsWordChar(sql[afterIdx]);
+                if (beforeOk && afterOk)
+                {
+                    if (first) return i;
+                    matchIdx = i;
+                }
             }
         }
 
         return matchIdx;
     }
+
+    private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 
     private static int FirstTopLevelIndexOfAny(string sql, params string[] tokens)
     {
