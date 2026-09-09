@@ -1,10 +1,10 @@
 # QueryKit.Repositories
 
-Repository base classes and query helpers (filter / sort / page) for [Rowan.QueryKit].
+Repository base classes and query helpers (filter / sort / page) for [BlockSoftware.QueryKit](https://www.nuget.org/packages/BlockSoftware.QueryKit).
 
 Built on top of Dapper. Provides a small, opinionated `BaseEntityRepository<TEntity, TKey>` with built-in support for:
 
-- Strongly-typed CRUD over Dapper
+- Strongly-typed CRUD over Dapper, including batched multi-row inserts
 - Composable, type-safe filtering, sorting, and paging
 - Soft delete via attribute
 - Optimistic concurrency
@@ -15,8 +15,12 @@ Built on top of Dapper. Provides a small, opinionated `BaseEntityRepository<TEnt
 ## Install
 
 ```bash
-dotnet add package Rowan.QueryKit.Repositories
+dotnet add package BlockSoftware.QueryKit.Repositories
 ```
+
+> Previously published as `Rowan.QueryKit.Repositories`. The package ID changed at 0.10.0; the
+> namespaces, types and API are unchanged, so switching is a one-line edit to your
+> `PackageReference`.
 
 ## Configure the dialect
 
@@ -206,6 +210,27 @@ int total = result.TotalItems;
 
 `PageOptions` clamps `Page` to `>= 1` and `PageSize` to `[1, MaxPageSize=500]`. Defaults: page 1, page size 50.
 
+
+## Bulk inserts
+
+`InsertAsync` costs one round trip per entity. Where the whole collection is known up front,
+`BatchInsertAsync` sends many rows per statement and returns the number of rows written:
+
+```csharp
+var intake = names.Select(n => new Student { Name = n }).ToArray();
+
+int written = await students.BatchInsertAsync(intake, ct);
+```
+
+It takes an optional `IDbTransaction` and `batchSize` like the other methods:
+
+```csharp
+await students.BatchInsertAsync(intake, ct, tx, batchSize: 200);
+```
+
+Entities keep the keys they are given, and empty `Guid` keys are filled in per row. Identity keys
+are not supported — there is no portable way to read many generated keys back from one statement —
+so insert those individually.
 ## Soft delete
 
 Mark a boolean property with `[SoftDelete]` and `DeleteAsync` flips it to `true` instead of issuing `DELETE`. Reads exclude soft-deleted rows by default.

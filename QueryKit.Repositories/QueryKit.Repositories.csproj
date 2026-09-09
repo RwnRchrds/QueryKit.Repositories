@@ -16,7 +16,7 @@
         <Title>QueryKit.Repositories</Title>
         <Authors>Rowan Richards</Authors>
         <Company>Rowan Richards</Company>
-        <Description>Repository base classes and query helpers (filter/sort/page) for [Rowan.QueryKit].</Description>
+        <Description>Repository base classes and query helpers (filter/sort/page) for BlockSoftware.QueryKit.</Description>
         <PackageTags>dapper sql crud micro-orm query repository</PackageTags>
         <PackageProjectUrl>https://github.com/RwnRchrds/QueryKit.Repositories</PackageProjectUrl>
         <RepositoryUrl>https://github.com/RwnRchrds/QueryKit.Repositories</RepositoryUrl>
