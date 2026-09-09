@@ -279,9 +279,9 @@ public static class QuerySqlBuilder
     /// Merges two parameter objects (including <see cref="DynamicParameters"/>),
     /// returning a new <see cref="DynamicParameters"/> suitable for Dapper execution.
     /// </summary>
-    /// <param name="a"></param>
-    /// <param name="b"></param>
-    /// <returns></returns>
+    /// <param name="a">First parameter object; may be null.</param>
+    /// <param name="b">Second parameter object; may be null. Its values win on a name collision.</param>
+    /// <returns>The merged parameters.</returns>
     public static DynamicParameters MergeParams(object? a, object? b)
     {
         var merged = new DynamicParameters();
@@ -294,9 +294,6 @@ public static class QuerySqlBuilder
     /// Creates a new instance of the default SQL naming convention used for mapping entities to database tables and
     /// columns.
     /// </summary>
-    /// <remarks>Use this method to obtain a convention that applies default naming strategies for SQL entity
-    /// mapping. The returned convention can be used to ensure consistent mapping behavior across your
-    /// application.</remarks>
     /// <returns>A <see cref="SqlConvention"/> instance configured with the standard table and column name resolvers.</returns>
     public static SqlConvention CreateConvention()
     {
