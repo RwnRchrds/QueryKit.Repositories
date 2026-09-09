@@ -26,6 +26,26 @@ public interface IBaseEntityRepository<TEntity, TKey> : IBaseEntityReadRepositor
         IDbTransaction? transaction = null, int? batchSize = null, bool discardGeneratedKeys = false);
 
     /// <summary>
+    /// Updates many entities by key in one command per batch, and returns the number of rows
+    /// affected. Writes the same columns <see cref="UpdateAsync"/> does.
+    /// </summary>
+    /// <remarks>
+    /// This neither writes nor checks a version column. Use <see cref="UpdateWithVersionAsync"/>
+    /// per entity where optimistic concurrency matters, because a batch cannot report which row of
+    /// many lost the race.
+    /// </remarks>
+    Task<int> BatchUpdateAsync(IEnumerable<TEntity> entities, CancellationToken cancellationToken = default,
+        IDbTransaction? transaction = null, int? batchSize = null);
+
+    /// <summary>
+    /// Inserts entities, overwriting any whose key is already present, and returns the number of
+    /// rows the statement reported. The table needs a unique index or primary key over the entity's
+    /// key: without one every dialect inserts a duplicate and reports success.
+    /// </summary>
+    Task<int> UpsertAsync(IEnumerable<TEntity> entities, CancellationToken cancellationToken = default,
+        IDbTransaction? transaction = null, int? batchSize = null);
+
+    /// <summary>
     /// Updates an existing entity and returns the updated instance.
     /// </summary>
     Task<TEntity> UpdateAsync(TEntity entity, CancellationToken cancellationToken = default, IDbTransaction? transaction = null);

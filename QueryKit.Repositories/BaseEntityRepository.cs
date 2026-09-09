@@ -59,6 +59,28 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
     }
 
     /// <inheritdoc/>
+    public virtual async Task<int> BatchUpdateAsync(IEnumerable<TEntity> entities,
+        CancellationToken cancellationToken = default, IDbTransaction? transaction = null,
+        int? batchSize = null)
+    {
+        using var lease = await AcquireConnection(transaction, cancellationToken);
+
+        return await lease.Connection.BatchUpdateAsync(entities, transaction, batchSize: batchSize,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public virtual async Task<int> UpsertAsync(IEnumerable<TEntity> entities,
+        CancellationToken cancellationToken = default, IDbTransaction? transaction = null,
+        int? batchSize = null)
+    {
+        using var lease = await AcquireConnection(transaction, cancellationToken);
+
+        return await lease.Connection.UpsertAsync(entities, transaction, batchSize: batchSize,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <inheritdoc/>
     public virtual async Task<TEntity> UpdateAsync(TEntity entity, CancellationToken cancellationToken = default, IDbTransaction? transaction = null)
     {
         using var lease = await AcquireConnection(transaction, cancellationToken);

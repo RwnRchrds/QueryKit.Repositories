@@ -191,6 +191,38 @@ public class BaseEntityRepositoryTests : IDisposable
         Assert.Equal(0, Scalar<int>("SELECT COUNT(*) FROM Widgets"));
     }
 
+    [Fact]
+    public async Task BatchUpdateGivesEveryRowItsOwnValues()
+    {
+        var widgets = Enumerable.Range(0, 5).Select(i => NewWidget("W" + i, i)).ToArray();
+        await _widgets.BatchInsertAsync(widgets);
+
+        foreach (var w in widgets) w.Quantity += 100;
+        var affected = await _widgets.BatchUpdateAsync(widgets);
+
+        Assert.Equal(5, affected);
+        foreach (var w in widgets)
+        {
+            Assert.Equal(w.Quantity,
+                Scalar<int>("SELECT Quantity FROM Widgets WHERE Id = @Id", Key(w.Id)));
+        }
+    }
+
+    [Fact]
+    public async Task UpsertInsertsWhatIsNewAndOverwritesWhatIsNot()
+    {
+        var existing = await _widgets.InsertAsync(NewWidget("Sprocket", 1));
+
+        existing.Quantity = 9;
+        var batch = new[] { existing, NewWidget("Cog", 2), NewWidget("Flange", 3) };
+
+        await _widgets.UpsertAsync(batch);
+
+        // Three rows, not four: the one already there was matched on its key.
+        Assert.Equal(3, Scalar<int>("SELECT COUNT(*) FROM Widgets"));
+        Assert.Equal(9, Scalar<int>("SELECT Quantity FROM Widgets WHERE Id = @Id", Key(existing.Id)));
+    }
+
     // ---------------------------------------------------------------------- insert or update
 
     [Fact]
