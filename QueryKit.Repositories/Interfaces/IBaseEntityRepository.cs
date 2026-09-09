@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Data;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,6 +15,14 @@ public interface IBaseEntityRepository<TEntity, TKey> : IBaseEntityReadRepositor
     /// Inserts a new entity and returns the inserted instance with its primary key populated.
     /// </summary>
     Task<TEntity> InsertAsync(TEntity entity, CancellationToken cancellationToken = default, IDbTransaction? transaction = null);
+
+    /// <summary>
+    /// Inserts many entities in as few statements as the dialect allows, and returns the number of
+    /// rows written. Identity keys are not supported: entities keep the keys they are given, or are
+    /// assigned Guids per row.
+    /// </summary>
+    Task<int> BatchInsertAsync(IEnumerable<TEntity> entities, CancellationToken cancellationToken = default,
+        IDbTransaction? transaction = null, int? batchSize = null);
 
     /// <summary>
     /// Updates an existing entity and returns the updated instance.
