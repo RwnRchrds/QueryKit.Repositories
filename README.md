@@ -228,9 +228,18 @@ It takes an optional `IDbTransaction` and `batchSize` like the other methods:
 await students.BatchInsertAsync(intake, ct, tx, batchSize: 200);
 ```
 
-Entities keep the keys they are given, and empty `Guid` keys are filled in per row. Identity keys
-are not supported — there is no portable way to read many generated keys back from one statement —
-so insert those individually.
+Entities keep the keys they are given, and empty `Guid` keys are filled in per row.
+
+Identity keys need an opt-in. The rows insert fine, but no dialect returns many generated keys from
+one statement, so the entities' key properties cannot be populated. Rather than hand back objects
+whose `Id` is silently still `0`, this throws unless you say you don't need them:
+
+```csharp
+await students.BatchInsertAsync(auditRows, ct, discardGeneratedKeys: true);
+```
+
+If you do need the keys, insert those rows with `InsertAsync`.
+
 ## Soft delete
 
 Mark a boolean property with `[SoftDelete]` and `DeleteAsync` flips it to `true` instead of issuing `DELETE`. Reads exclude soft-deleted rows by default.

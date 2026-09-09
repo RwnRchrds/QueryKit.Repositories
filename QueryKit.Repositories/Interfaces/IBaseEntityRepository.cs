@@ -18,11 +18,12 @@ public interface IBaseEntityRepository<TEntity, TKey> : IBaseEntityReadRepositor
 
     /// <summary>
     /// Inserts many entities in as few statements as the dialect allows, and returns the number of
-    /// rows written. Identity keys are not supported: entities keep the keys they are given, or are
-    /// assigned Guids per row.
+    /// rows written. Identity keys are permitted only when <paramref name="discardGeneratedKeys"/>
+    /// is set, because the keys the database generates cannot be read back for many rows at once
+    /// and the entities would otherwise come back with their keys still unset.
     /// </summary>
     Task<int> BatchInsertAsync(IEnumerable<TEntity> entities, CancellationToken cancellationToken = default,
-        IDbTransaction? transaction = null, int? batchSize = null);
+        IDbTransaction? transaction = null, int? batchSize = null, bool discardGeneratedKeys = false);
 
     /// <summary>
     /// Updates an existing entity and returns the updated instance.

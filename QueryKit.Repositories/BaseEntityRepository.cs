@@ -50,12 +50,12 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
     /// <inheritdoc/>
     public virtual async Task<int> BatchInsertAsync(IEnumerable<TEntity> entities,
         CancellationToken cancellationToken = default, IDbTransaction? transaction = null,
-        int? batchSize = null)
+        int? batchSize = null, bool discardGeneratedKeys = false)
     {
         using var lease = await AcquireConnection(transaction, cancellationToken);
 
         return await lease.Connection.BatchInsertAsync(entities, transaction, batchSize: batchSize,
-            cancellationToken: cancellationToken);
+            discardGeneratedKeys: discardGeneratedKeys, cancellationToken: cancellationToken);
     }
 
     /// <inheritdoc/>
