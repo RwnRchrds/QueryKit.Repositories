@@ -126,7 +126,7 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
 
         using var lease = await AcquireConnection(transaction, cancellationToken);
 
-        var entity = await lease.Connection.GetAsync<TEntity?>(id, transaction, cancellationToken: cancellationToken);
+        var entity = await lease.Connection.GetAsync<TEntity?>(id!, transaction, cancellationToken: cancellationToken);
 
         if (entity is null)
         {
@@ -135,7 +135,7 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
 
         if (!softDelete || SoftDeleteProp is null)
         {
-            var affected = await lease.Connection.DeleteAsync<TEntity>(id, transaction, cancellationToken: cancellationToken);
+            var affected = await lease.Connection.DeleteAsync<TEntity>(id!, transaction, cancellationToken: cancellationToken);
             return affected > 0;
         }
 
@@ -165,7 +165,7 @@ public class BaseEntityRepository<TEntity, TKey> : BaseEntityReadRepository<TEnt
             return false;
 
         using var lease = await AcquireConnection(transaction, cancellationToken);
-        var entity = await lease.Connection.GetAsync<TEntity?>(id, transaction, cancellationToken: cancellationToken);
+        var entity = await lease.Connection.GetAsync<TEntity?>(id!, transaction, cancellationToken: cancellationToken);
         if (entity is null) return false;
 
         SoftDeleteProp.SetValue(entity, false);

@@ -1,25 +1,37 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net8.0</TargetFramework>
+        <TargetFrameworks>net10.0;net8.0</TargetFrameworks>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
 
         <IsPackable>false</IsPackable>
         <IsTestProject>true</IsTestProject>
+        <!-- xunit.v3 test projects are self-hosting executables -->
+        <OutputType>Exe</OutputType>
+        <!-- xUnit1051 wants TestContext.Current.CancellationToken passed everywhere; these tests
+             run against in-memory SQLite in milliseconds, so there is nothing to cancel. -->
+        <NoWarn>$(NoWarn);xUnit1051</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="coverlet.collector" Version="6.0.0"/>
-        <PackageReference Include="Dapper" Version="2.1.66"/>
-        <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.9"/>
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0"/>
-        <PackageReference Include="xunit" Version="2.5.3"/>
-        <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3"/>
+        <PackageReference Include="coverlet.collector" Version="10.0.1"/>
+        <PackageReference Include="Dapper" Version="2.1.89"/>
+        <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12"/>
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1"/>
+        <PackageReference Include="xunit.v3" Version="4.0.1"/>
+        <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0"/>
     </ItemGroup>
 
     <ItemGroup>
         <Using Include="Xunit"/>
+    </ItemGroup>
+
+    <!-- QueryKit's dialect is process-wide, and test classes set different ones (SQLite for the
+         CRUD harness, SQL Server and others for the SQL builder). Run in parallel, one class can
+         switch the dialect under another mid-test, so xunit.runner.json runs them serially. -->
+    <ItemGroup>
+        <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest"/>
     </ItemGroup>
 
     <ItemGroup>

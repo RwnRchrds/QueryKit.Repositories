@@ -41,6 +41,7 @@ public class ConnectionLeaseTests
         public bool Disposed { get; private set; }
         public bool Opened { get; set; }
 
+        [System.Diagnostics.CodeAnalysis.AllowNull]
         public string ConnectionString { get; set; } = "";
         public int ConnectionTimeout => 0;
         public string Database => "";
