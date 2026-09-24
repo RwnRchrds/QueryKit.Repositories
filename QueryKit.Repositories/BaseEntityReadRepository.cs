@@ -67,7 +67,15 @@ public class BaseEntityReadRepository<TEntity, TKey> : IBaseEntityReadRepository
             throw new ArgumentException("id must not be the default value.", nameof(id));
 
         using var lease = await AcquireConnection(transaction, cancellationToken);
-        return await lease.Connection.GetAsync<TEntity>(id, transaction, cancellationToken: cancellationToken);
+        var entity = await lease.Connection.GetAsync<TEntity>(id, transaction, cancellationToken: cancellationToken);
+
+        // Reads exclude soft-deleted rows, and a lookup by key is a read like any other.
+        var softDelete = SoftDeleteCache.Value;
+        if (entity is not null && softDelete.HasSoftDelete &&
+            (bool)typeof(TEntity).GetProperty(softDelete.PropertyName)!.GetValue(entity)!)
+            return null;
+
+        return entity;
     }
 
     /// <inheritdoc />

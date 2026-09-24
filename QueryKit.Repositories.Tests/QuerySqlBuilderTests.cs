@@ -114,6 +114,10 @@ SELECT * FROM cte".Trim();
     [InlineData(Dialect.PostgreSQL, "SELECT * FROM T ORDER BY A", "SELECT * FROM T ORDER BY A LIMIT 5 OFFSET 10")]
     [InlineData(Dialect.MySQL, "SELECT * FROM T ORDER BY A", "SELECT * FROM T ORDER BY A LIMIT 10, 5")]
     [InlineData(Dialect.SQLite, "SELECT * FROM T ORDER BY A", "SELECT * FROM T ORDER BY A LIMIT 5 OFFSET 10")]
+    [InlineData(Dialect.Oracle, "SELECT * FROM T ORDER BY A",
+        "SELECT * FROM T ORDER BY A OFFSET 10 ROWS FETCH NEXT 5 ROWS ONLY")]
+    [InlineData(Dialect.DB2, "SELECT * FROM T ORDER BY A",
+        "SELECT * FROM T ORDER BY A OFFSET 10 ROWS FETCH NEXT 5 ROWS ONLY")]
     public void AppendPaging_AppendsByDialect(Dialect dialect, string sql, string expected)
     {
         // Arrange: set the core dialect (exposed via SimpleCRUD config in your core)
@@ -226,6 +230,32 @@ SELECT * FROM cte".Trim();
         var (where, _) = QuerySqlBuilder.BuildWhere<StudentEntity>(filter);
         Assert.Contains("LIKE @", where);
         Assert.Contains("ESCAPE '\\'", where); // string contains a single backslash in SQL, doubled in C#
+    }
+
+    [Theory]
+    [InlineData(FilterOperator.Contains, "%50\\%%")]
+    [InlineData(FilterOperator.StartsWith, "50\\%%")]
+    [InlineData(FilterOperator.EndsWith, "%50\\%")]
+    public void BuildWhere_Like_OnMySql_OmitsTheEscapeClause(FilterOperator op, string expectedPattern)
+    {
+        // In MySQL's default SQL mode ESCAPE '\' is an unterminated string literal. Backslash is
+        // already MySQL's LIKE escape, so the pattern is escaped the same way and the clause dropped.
+        ConnectionExtensions.UseDialect(Dialect.MySQL);
+        var filter = new FilterOptions
+        {
+            Groups = new[]
+            {
+                new FilterGroup
+                {
+                    Criteria = new[] { new FilterCriterion { ColumnName = "Name", Operator = op, Value = "50%" } }
+                }
+            }
+        };
+
+        var (where, parameters) = QuerySqlBuilder.BuildWhere<StudentEntity>(filter);
+
+        Assert.Equal("`Name` LIKE @__qk0", where);
+        Assert.Equal(expectedPattern, parameters.Get<string>("__qk0"));
     }
 
     [Fact]

@@ -92,9 +92,13 @@ public static class QuerySqlBuilder
         var size = paging.PageSizeClamped;
         var offset = (page - 1) * size;
 
+        // Oracle and DB2 have no LIMIT. They take the standard OFFSET/FETCH clause instead (Oracle
+        // 12c and DB2 11.1 onward), which, unlike wrapping the query in a ROW_NUMBER() subquery,
+        // leaves the caller's select list as it is.
         return dialect switch
         {
-            Dialect.SQLServer => $"{s} OFFSET {offset} ROWS FETCH NEXT {size} ROWS ONLY",
+            Dialect.SQLServer or Dialect.Oracle or Dialect.DB2 =>
+                $"{s} OFFSET {offset} ROWS FETCH NEXT {size} ROWS ONLY",
             Dialect.PostgreSQL => $"{s} LIMIT {size} OFFSET {offset}",
             Dialect.MySQL => $"{s} LIMIT {offset}, {size}",
             _ => $"{s} LIMIT {size} OFFSET {offset}"
@@ -144,6 +148,15 @@ public static class QuerySqlBuilder
                     return escaped;
                 }
 
+                // PostgreSQL and MySQL already escape LIKE with a backslash. MySQL must not be told
+                // so: in its default SQL mode ESCAPE '\' is an unterminated string literal.
+                string LikeMatch(string name) => dialect switch
+                {
+                    Dialect.PostgreSQL => $"{col} ILIKE @{name}",
+                    Dialect.MySQL => $"{col} LIKE @{name}",
+                    _ => $"{col} LIKE @{name} ESCAPE '\\'"
+                };
+
                 string LikeContains(object? v)
                 {
                     var s = Convert.ToString(v);
@@ -151,9 +164,7 @@ public static class QuerySqlBuilder
 
                     var name = $"__qk{pIndex++}";
                     dp.Add(name, $"%{EscapeUser(s)}%");
-                    return dialect == Dialect.PostgreSQL
-                        ? $"{col} ILIKE @{name}"
-                        : $"{col} LIKE @{name} ESCAPE '\\'";
+                    return LikeMatch(name);
                 }
 
                 string LikeStartsWith(object? v)
@@ -163,10 +174,7 @@ public static class QuerySqlBuilder
 
                     var name = $"__qk{pIndex++}";
                     dp.Add(name, $"{EscapeUser(s)}%");
-
-                    return dialect == Dialect.PostgreSQL
-                        ? $"{col} ILIKE @{name}"
-                        : $"{col} LIKE @{name} ESCAPE '\\'";
+                    return LikeMatch(name);
                 }
 
                 string LikeEndsWith(object? v)
@@ -176,10 +184,7 @@ public static class QuerySqlBuilder
 
                     var name = $"__qk{pIndex++}";
                     dp.Add(name, $"%{EscapeUser(s)}");
-
-                    return dialect == Dialect.PostgreSQL
-                        ? $"{col} ILIKE @{name}"
-                        : $"{col} LIKE @{name} ESCAPE '\\'";
+                    return LikeMatch(name);
                 }
 
                 static string NegateOrEmpty(string s) => string.IsNullOrWhiteSpace(s) ? "" : $"NOT ({s})";

@@ -258,6 +258,38 @@ public class BaseEntityRepositoryTests : IDisposable
         Assert.Equal(1, Scalar<int>("SELECT Deleted FROM Widgets WHERE Id = @Id", Key(widget.Id)));
     }
 
+    // ------------------------------------------------------------------------- get by id
+
+    [Fact]
+    public async Task GetByIdFindsALiveEntity()
+    {
+        var widget = await _widgets.InsertAsync(NewWidget());
+
+        var found = await _widgets.GetByIdAsync(widget.Id);
+
+        Assert.NotNull(found);
+        Assert.Equal(widget.Name, found!.Name);
+    }
+
+    [Fact]
+    public async Task GetByIdDoesNotFindASoftDeletedEntity()
+    {
+        var widget = await _widgets.InsertAsync(NewWidget());
+        await _widgets.DeleteAsync(widget.Id);
+
+        Assert.Null(await _widgets.GetByIdAsync(widget.Id));
+    }
+
+    [Fact]
+    public async Task GetByIdFindsAnUndeletedEntityAgain()
+    {
+        var widget = await _widgets.InsertAsync(NewWidget());
+        await _widgets.DeleteAsync(widget.Id);
+        await _widgets.UndeleteAsync(widget.Id);
+
+        Assert.NotNull(await _widgets.GetByIdAsync(widget.Id));
+    }
+
     [Fact]
     public async Task DeleteRemovesTheRowWhenSoftDeleteIsDeclined()
     {

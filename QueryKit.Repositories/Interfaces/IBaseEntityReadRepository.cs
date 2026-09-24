@@ -14,7 +14,8 @@ namespace QueryKit.Repositories.Interfaces;
 public interface IBaseEntityReadRepository<TEntity, TKey> where TEntity : class, IBaseEntity<TKey>
 {
     /// <summary>
-    /// Retrieves an entity by primary key.
+    /// Retrieves an entity by primary key, or <see langword="null"/> when there is none. A
+    /// soft-deleted entity counts as none, as it does for every other read.
     /// </summary>
     Task<TEntity?> GetByIdAsync(TKey id, CancellationToken cancellationToken = default, IDbTransaction? transaction = null);
 
